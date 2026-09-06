@@ -1,0 +1,6 @@
+{
+  "platformio-ide.disablePIOHomeStartup": true,
+  "files.associations": {
+    "*.h": "cpp"
+  }
+}
