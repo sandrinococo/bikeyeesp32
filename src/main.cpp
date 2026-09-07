@@ -3,7 +3,9 @@
 #include <WiFi.h>
 
 #include "CommunicationUtils.h"
+#include "BatteryService.h"
 #include "ConfigurationService.h"
+#include "InternalLedService.h"
 #include "LedService.h"
 #include "StatusService.h"
 #include "StreamingService.h"
@@ -12,13 +14,17 @@
 WebServer server(80);
 ConfigurationService configuration;
 LedService leds;
+BatteryService battery;
+InternalLedService internalLed;
 StreamingService streaming;
-StatusService status(leds, streaming);
+StatusService status(leds, streaming, battery, internalLed);
 
 void setup() {
   Serial.begin(115200);
   configuration.begin();
 
+  battery.begin();
+  internalLed.begin(battery);
   leds.begin(configuration.storage());
   if (!streaming.beginCamera()) {
     Serial.println("Camera initialization failed");
@@ -56,5 +62,6 @@ void setup() {
 
 void loop() {
   server.handleClient();
+  internalLed.update();
   leds.update();
 }

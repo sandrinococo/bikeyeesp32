@@ -29,6 +29,20 @@
 #define BATTERY_MAX_MV 4200
 // Multiplier for the resistor-divider ratio: battery voltage / ADC voltage.
 #define BATTERY_DIVIDER_RATIO 2.0f
+// Battery ADC sampling interval and number of samples used for the moving average.
+#define BATTERY_SAMPLE_INTERVAL_MILLIS 1000
+#define BATTERY_AVERAGE_SAMPLES 10
+// Optional charger status input. Set to -1 when the charger exposes no status pin.
+#define BATTERY_CHARGE_STATUS_PIN -1
+#define BATTERY_CHARGE_STATUS_ACTIVE_LEVEL LOW
+#define BATTERY_CHARGE_STATUS_PULLUP 1
+// Battery and internal LED thresholds/timings.
+#define BATTERY_LOW_PERCENT 20
+#define BATTERY_FULL_PERCENT 100
+#define INTERNAL_LED_GPIO 4
+#define INTERNAL_LED_ACTIVE_LEVEL 1
+#define INTERNAL_LED_LOW_BATTERY_INTERVAL_MILLIS 250
+#define INTERNAL_LED_CHARGING_INTERVAL_MILLIS 1000
 
 // Addressable LED strip hardware. Set enabled to 1 and count to the real LED count.
 #define LED_STRIP_ENABLED 0

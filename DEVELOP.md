@@ -61,6 +61,65 @@ pio run --target upload
 pio device monitor --baud 115200
 ```
 
+## Test HTTP
+
+Il test [tests/test_device_http.py](tests/test_device_http.py) usa solo la
+libreria standard Python e verifica che la scheda risponda a `GET /status`.
+Controlla anche il contratto JSON di batteria, LED interno e striscia LED.
+
+Con il computer collegato alla rete Wi-Fi della scheda eseguire:
+
+```powershell
+python tests/test_device_http.py --verbose
+```
+
+Per usare un indirizzo o un timeout diversi:
+
+```powershell
+python tests/test_device_http.py --url http://192.168.4.1 --timeout 10
+```
+
+Il test `test_register` usa il PIN predefinito `482917`. Per un PIN diverso:
+
+```powershell
+python tests/test_device_http.py --pin 123456
+```
+
+In alternativa impostare `ESP32_DEVICE_PIN` nell'ambiente.
+
+Il test `test_led_authentication` registra una sessione, invia una richiesta
+`POST /led` con firma HMAC errata e verifica `401`, poi ripete la richiesta con
+la firma corretta. Con la striscia disabilitata il secondo passaggio attende
+`409 led strip is not configured`; con la striscia configurata attende `200`.
+
+Il test `test_register_invalidates_previous_session` verifica che una nuova
+registrazione sostituisca la sessione precedente: il vecchio token riceve
+`401`, mentre il nuovo token continua a funzionare.
+
+Il test `test_stream_authentication` verifica che `GET /stream` rifiuti una
+firma non valida con `401` e che una firma valida restituisca `200`, content
+type MJPEG e l'inizio del primo frame. Il test chiude la connessione dopo il
+probe, perche' lo stream e' intenzionalmente continuo.
+
+Il test restituisce codice di uscita `0` se tutti i controlli passano. In
+alternativa si possono impostare `ESP32_DEVICE_URL` e `ESP32_HTTP_TIMEOUT` come
+variabili d'ambiente. Il test richiede che la scheda sia accesa e che il PC
+abbia gia' effettuato la connessione al suo access point.
+
+Al termine viene stampato un report con una riga per ogni test (`OK` o
+`FAILED`), un messaggio sintetico e il riepilogo complessivo, ad esempio:
+
+```text
+TEST REPORT
+OK     test_device_exists: completed
+OK     test_register: completed
+OK     test_register_invalidates_previous_session: completed
+OK     test_led_authentication: completed
+OK     test_stream_authentication: completed
+OK     test_battery_status_contract: completed
+RESULT: OK | tests=7 | passed=7 | failed=0
+```
+
 Il target definito in `platformio.ini` e' `esp32cam`, con framework Arduino. Il build usa ArduinoJson `^6.21.5` e Adafruit NeoPixel `^1.12.0`; PlatformIO scarica queste dipendenze automaticamente.
 
 ## Comportamento all'avvio

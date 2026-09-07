@@ -41,8 +41,12 @@ La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazio
   "running": true,
   "wifi": {"mode": "accessPoint", "connectedStations": 1},
   "camera": {"resolution": "VGA", "format": "JPEG", "fps": 0},
-  "battery": {"present": false, "levelPercent": null, "voltageMv": null},
-  "ledStatus": {"present": false, "configured": false, "mode": "off"}
+  "battery": {"present": false, "levelPercent": null, "voltageMv": 0,
+    "charging": false, "full": false, "chargeDetection": "unavailable",
+    "sampleIntervalMillis": 1000, "averageSamples": 10, "samplesCollected": 0},
+  "ledStatus": {"present": false, "configured": false, "mode": "off"},
+  "internalLedStatus": {"present": true, "colorable": false,
+    "gpio": 4, "state": "off", "on": false}
 }
 ```
 
@@ -117,7 +121,7 @@ Campi:
 
 - `mode`: `off`, `solid` oppure `blink`.
 - `brightness`, `red`, `green`, `blue`: valori interi da 0 a 255.
-- `intervalMillis`: obbligatorio per regolare il lampeggio, da 50 a 60000 millisecondi; se omesso mantiene il valore corrente.
+- `intervalMillis`: opzionale, da 50 a 60000 millisecondi; se omesso mantiene il valore corrente.
 
 Esempio di lampeggio:
 

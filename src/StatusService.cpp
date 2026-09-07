@@ -4,7 +4,9 @@
 #include <WiFi.h>
 
 #include "CommunicationUtils.h"
+#include "BatteryService.h"
 #include "config.h"
+#include "InternalLedService.h"
 
 namespace {
 const char *frameSizeName(framesize_t frameSize) {
@@ -30,15 +32,11 @@ const char *pixelFormatName(pixformat_t pixelFormat) {
   }
 }
 
-int batteryPercent(float voltageMv) {
-  const float percentage = (voltageMv - BATTERY_MIN_MV) * 100.0f /
-                          (BATTERY_MAX_MV - BATTERY_MIN_MV);
-  return constrain(static_cast<int>(percentage), 0, 100);
-}
 }
 
-StatusService::StatusService(LedService &leds, StreamingService &streaming)
-    : leds(leds), streaming(streaming) {}
+StatusService::StatusService(LedService &leds, StreamingService &streaming,
+               BatteryService &battery, InternalLedService &internalLed)
+  : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed) {}
 
 void StatusService::handle(WebServer &server) const {
   StaticJsonDocument<1024> document;
@@ -66,19 +64,11 @@ void StatusService::handle(WebServer &server) const {
     settings["exposureLevel"] = sensor->status.ae_level;
   }
 
-  JsonObject battery = document.createNestedObject("battery");
-#if BATTERY_ADC_PIN >= 0
-  const float voltageMv = analogReadMilliVolts(BATTERY_ADC_PIN) * BATTERY_DIVIDER_RATIO;
-  battery["present"] = true;
-  battery["voltageMv"] = voltageMv;
-  battery["levelPercent"] = batteryPercent(voltageMv);
-#else
-  battery["present"] = false;
-  battery["levelPercent"] = nullptr;
-  battery["voltageMv"] = nullptr;
-#endif
-
+  JsonObject batteryStatus = document.createNestedObject("battery");
+  battery.writeStatus(batteryStatus);
   JsonObject ledStatus = document.createNestedObject("ledStatus");
   leds.writeStatus(ledStatus);
+  JsonObject internalLedStatus = document.createNestedObject("internalLedStatus");
+  internalLed.writeStatus(internalLedStatus);
   CommunicationUtils::sendJson(server, 200, document);
 }
