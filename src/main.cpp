@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 #include "CommunicationUtils.h"
 #include "BatteryService.h"
@@ -35,6 +36,9 @@ void setup() {
 
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL, false, 1);
+#if WIFI_DISABLE_POWER_SAVE
+  esp_wifi_set_ps(WIFI_PS_NONE);
+#endif
   Serial.print("AP address: ");
   Serial.println(WiFi.softAPIP());
 

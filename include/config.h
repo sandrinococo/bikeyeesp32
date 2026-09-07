@@ -22,6 +22,9 @@
 // Maximum allowed timestamp difference for authenticated requests, in seconds.
 #define AUTH_WINDOW_SECONDS 5
 
+// Keep Wi-Fi radio awake for a more stable AP and HTTP stream.
+#define WIFI_DISABLE_POWER_SAVE 1
+
 // Battery measurement. Set the ADC GPIO to -1 when no battery circuit is fitted.
 #define BATTERY_ADC_PIN -1
 // Voltage range used to convert the measured battery voltage into a percentage.

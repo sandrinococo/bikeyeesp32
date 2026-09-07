@@ -43,6 +43,11 @@ La striscia usa il protocollo NeoPixel a un filo, 800 kHz, ordine GRB. Collegare
 
 Per la batteria, impostare `BATTERY_ADC_PIN` e il rapporto del partitore (`BATTERY_DIVIDER_RATIO`); il circuito deve mantenere l'ingresso ADC entro i limiti ammessi dalla scheda.
 
+Per migliorare la stabilita' dell'access point e dello streaming HTTP, il
+risparmio energetico Wi-Fi e' disabilitato quando
+`WIFI_DISABLE_POWER_SAVE` vale `1`. Questo aumenta il consumo energetico; per
+riattivarlo impostare il valore a `0` in `include/config.h`.
+
 ## Compilazione e caricamento
 
 Da Visual Studio Code:
@@ -68,6 +73,10 @@ libreria standard Python e verifica che la scheda risponda a `GET /status`.
 Controlla anche il contratto JSON di batteria, LED interno e striscia LED.
 
 Con il computer collegato alla rete Wi-Fi della scheda eseguire:
+
+```powershell
+.venv\Scripts\activate.bat
+```
 
 ```powershell
 python tests/test_device_http.py --verbose
@@ -137,3 +146,38 @@ L'orologio del dispositivo viene allineato durante `POST /register`, usando il t
 Il PIN non viene inviato come segreto di rete: la registrazione verifica una prova HMAC. Le API protette usano un HMAC basato sul token di sessione e una finestra temporale di 5 secondi. L'access point usa WPA2.
 
 Il firmware e' pensato per una rete locale affidabile. Per scenari esposti o con minacce fisiche, aggiungere TLS e una protezione hardware delle chiavi. La registrazione supporta una sola sessione: una nuova app registrata invalida il token precedente.
+
+
+# IDE vscode
+
+## installa plugin platformio 
+Permette la comunicazione con device ESP32.
+
+## configurazione iniziale
+Collega ESP32 via USB al PC.
+
+
+## installa su device 
+
+Visualizza le porte a cui e' connesso ESP32
+> pio device list -v
+
+Ad esempio:
+<code>
+COM3
+----
+Hardware ID: PCI\VEN_8086&DEV_8C3D&SUBSYS_17E010CF&REV_04\3&11583659&0&B3
+Description: Intel(R) Active Management Technology - SOL (COM3)
+
+COM4
+----
+Hardware ID: USB VID:PID=0403:6001 SER=A5069RR4A
+Description: USB Serial Port (COM4)
+</code>
+
+Recupera la COMx che ha PID=nnnn:pppp
+
+
+> pio run --target upload --upload-port COM4
+
+se COM4 e' la porta a cui e' connesso.
