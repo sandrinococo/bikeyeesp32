@@ -1,0 +1,80 @@
+# Documentazione per sviluppatori
+
+## Architettura
+
+Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP sulla porta 80.
+
+`src/main.cpp` compone i servizi, inizializza l'hardware e registra il routing:
+
+- `GET /status` tramite `StatusService`;
+- `POST /register` e autenticazione tramite `ConfigurationService`;
+- `POST /led` tramite `LedService`;
+- `GET /stream` tramite `StreamingService`.
+
+Componenti principali:
+
+- `ConfigurationService`: persistenza NVS con `Preferences`, registrazione, token di sessione e autenticazione HMAC-SHA256.
+- `CommunicationUtils`: parsing JSON, risposte JSON, confronto a tempo costante, HMAC e generazione del token.
+- `StatusService`: raccoglie telemetria di sistema, Wi-Fi, camera, batteria e LED per `GET /status`.
+- `StreamingService`: inizializza il sensore OV2640 con il pinout AI Thinker e produce lo stream MJPEG.
+- `LedService`: gestisce la striscia WS2812B/SP620, gli stati `off`, `solid` e `blink` e la persistenza delle impostazioni.
+
+La configurazione centralizzata e' in `include/config.h`. Il manifest di build e dipendenze e' `platformio.ini`.
+
+## Requisiti
+
+- Visual Studio Code con estensione PlatformIO, oppure PlatformIO Core.
+- Scheda ESP32-CAM AI Thinker.
+- Adattatore USB-seriale per il caricamento.
+- Alimentazione stabile a 5 V durante programmazione e uso della camera.
+
+## Configurazione
+
+Prima del build controllare `include/config.h`:
+
+- `DEVICE_PIN`, identita' e credenziali dell'access point;
+- parametri camera (`CAMERA_FRAME_SIZE`, qualita' JPEG e frame buffer);
+- configurazione opzionale del partitore batteria;
+- abilitazione e parametri della striscia LED.
+
+Per abilitare una striscia WS2812B/SP620 impostare `LED_STRIP_ENABLED` a `1`, `LED_STRIP_COUNT` al numero reale di LED e, se necessario, un GPIO dati non usato dalla camera. Il valore predefinito e' GPIO 13.
+
+La striscia usa il protocollo NeoPixel a un filo, 800 kHz, ordine GRB. Collegare `DIN` al GPIO selezionato e condividere il GND con l'ESP32. Alimentare la striscia con un 5 V adeguato al numero di LED, non dal GPIO o dal pin 3.3 V dell'ESP32. Si raccomandano una resistenza da circa 330 ohm sul segnale e un condensatore da circa 1000 uF tra 5 V e GND vicino alla striscia.
+
+Per la batteria, impostare `BATTERY_ADC_PIN` e il rapporto del partitore (`BATTERY_DIVIDER_RATIO`); il circuito deve mantenere l'ingresso ADC entro i limiti ammessi dalla scheda.
+
+## Compilazione e caricamento
+
+Da Visual Studio Code:
+
+1. Aprire la cartella del progetto.
+2. Usare `PlatformIO: Build`.
+3. Mettere la ESP32-CAM in modalita' bootloader, secondo l'adattatore USB-seriale usato.
+4. Usare `PlatformIO: Upload`.
+5. Aprire `PlatformIO: Serial Monitor` a 115200 baud per leggere l'indirizzo dell'access point e gli eventuali errori della camera.
+
+Da terminale, con PlatformIO Core installato:
+
+```powershell
+pio run
+pio run --target upload
+pio device monitor --baud 115200
+```
+
+Il target definito in `platformio.ini` e' `esp32cam`, con framework Arduino. Il build usa ArduinoJson `^6.21.5` e Adafruit NeoPixel `^1.12.0`; PlatformIO scarica queste dipendenze automaticamente.
+
+## Comportamento all'avvio
+
+1. Inizializza seriale e archivio NVS.
+2. Carica ed applica le impostazioni LED salvate.
+3. Inizializza la camera; in caso di errore si ferma e stampa `Camera initialization failed` sulla seriale.
+4. Avvia l'access point e il server HTTP sulla porta 80.
+5. Nel loop gestisce le richieste HTTP e aggiorna il lampeggio LED.
+
+L'orologio del dispositivo viene allineato durante `POST /register`, usando il timestamp ricevuto. Il token e l'offset temporale sono persistiti in NVS.
+
+## Sicurezza e limiti
+
+Il PIN non viene inviato come segreto di rete: la registrazione verifica una prova HMAC. Le API protette usano un HMAC basato sul token di sessione e una finestra temporale di 5 secondi. L'access point usa WPA2.
+
+Il firmware e' pensato per una rete locale affidabile. Per scenari esposti o con minacce fisiche, aggiungere TLS e una protezione hardware delle chiavi. La registrazione supporta una sola sessione: una nuova app registrata invalida il token precedente.

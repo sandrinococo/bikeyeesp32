@@ -1,121 +1,143 @@
 # ESP32-CAM device service
 
-Firmware PlatformIO per ESP32-CAM AI Thinker. Il dispositivo crea una rete Wi-Fi locale con SSID `ESP32-CAM-AI`, espone lo stato e lo stream MJPEG e supporta la registrazione di una sola app mobile.
+Firmware per ESP32-CAM AI Thinker che crea una rete Wi-Fi locale e offre a una app mobile:
 
-## Struttura del firmware
+- stato e informazioni del dispositivo;
+- registrazione di una sola app alla volta;
+- streaming video MJPEG autenticato;
+- controllo di una striscia LED opzionale.
 
-- `main.cpp`: inizializzazione hardware, Wi-Fi e routing HTTP.
-- `ConfigurationService`: registrazione, autenticazione HMAC e accesso alla NVS.
-- `CommunicationUtils`: risposte JSON, parsing del body e primitive di hashing.
-- `LedService`: pilotaggio WS2812B/SP620, lampeggio e persistenza delle impostazioni.
-- `StatusService`: costruzione della risposta di `GET /status`.
-- `StreamingService`: inizializzazione camera, stream MJPEG e misura FPS.
+## Attivazione e connessione
 
-## Avvio
+Dopo aver caricato e avviato il firmware, collegare il telefono alla rete Wi-Fi generata dal dispositivo:
 
-1. Installare l'estensione PlatformIO in VS Code.
-2. Collegare la ESP32-CAM usando un adattatore USB-seriale.
-3. Verificare `DEVICE_PIN` in `include/config.h`: questo e' il PIN stampato sul modulo.
-4. Eseguire `PlatformIO: Build`, poi `PlatformIO: Upload`.
+- SSID: `ESP32-CAM-AI`
+- password: `esp32cam-local`
+- indirizzo del dispositivo: `192.168.4.1`
 
-Dopo l'avvio, l'app mobile deve collegarsi alla rete Wi-Fi `ESP32-CAM-AI` con password `esp32cam-local`. L'IP AP predefinito e' `192.168.4.1`.
+La rete ospita un solo client Wi-Fi alla volta. Prima di usare gli endpoint autenticati, l'app deve registrarsi con `POST /register`.
 
-## API
+## Endpoint API
 
-### Stato e registrazione
+La base URL e' `http://192.168.4.1`.
 
-`GET /status` non richiede autenticazione, per consentire discovery e registrazione. Risponde con:
+### `GET /status`
+
+Non richiede autenticazione. Usarlo per individuare il dispositivo e leggerne lo stato prima della registrazione.
+
+```http
+GET /status HTTP/1.1
+Host: 192.168.4.1
+```
+
+La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazioni e FPS della camera, batteria e stato LED. Esempio:
 
 ```json
 {
-  "tipo":"ESP32-CAM", "version":"1.0",
-  "deviceName":"ESP32-CAM-AI", "serial":"1234567890",
-  "running":true, "message":"Device is running",
-  "ram":{"freeBytes":123456,"totalBytes":327680},
-  "wifi":{"mode":"accessPoint","signalDbm":-127,"connectedStations":0},
-  "camera":{"resolution":"VGA","format":"JPEG","fps":0,
-    "settings":{"brightness":0,"contrast":0,"saturation":0,
-      "autoExposure":1,"exposureLevel":0}},
-  "battery":{"present":false,"levelPercent":null,"voltageMv":null},
-  "ledStatus":{"present":false,"configured":false,"gpio":-1,
-    "count":0,"brightness":0,"mode":"off"}
+  "tipo": "ESP32-CAM",
+  "version": "1.0",
+  "deviceName": "ESP32-CAM-AI",
+  "serial": "1234567890",
+  "running": true,
+  "wifi": {"mode": "accessPoint", "connectedStations": 1},
+  "camera": {"resolution": "VGA", "format": "JPEG", "fps": 0},
+  "battery": {"present": false, "levelPercent": null, "voltageMv": null},
+  "ledStatus": {"present": false, "configured": false, "mode": "off"}
 }
 ```
 
-`fps` e' il valore misurato durante lo stream MJPEG. In modalita' access point
-`signalDbm` non rappresenta il segnale dell'AP verso il telefono: l'ESP32 non
-puo' misurare direttamente quel valore; il client deve rilevarlo dal proprio
-Wi-Fi.
+In modalita' access point, `wifi.signalDbm` non misura il segnale percepito dal telefono; l'app deve ricavarlo dalla propria connessione Wi-Fi.
 
-## Batteria e striscia LED
+### `POST /register`
 
-La ESP32-CAM AI Thinker non include un sensore batteria o un driver per
-strisce LED. Per una batteria con partitore resistivo, impostare in
-`include/config.h` `BATTERY_ADC_PIN` e i limiti in millivolt. Il partitore deve
-ridurre la tensione sotto il limite ADC della scheda.
+Non richiede autenticazione. Registra l'app e restituisce il token necessario per le richieste successive. Una nuova registrazione sostituisce quella precedente.
 
-La striscia WS2812B con controller SP620 e' compatibile con il protocollo
-NeoPixel a un filo, 800 kHz e ordine colore GRB. In `include/config.h`
-impostare `LED_STRIP_ENABLED` a `1` e `LED_STRIP_COUNT` al numero effettivo di
-LED. Il GPIO dati predefinito e' `13`; cambiarlo solo se necessario e usare un
-GPIO non occupato dalla camera.
+```http
+POST /register HTTP/1.1
+Host: 192.168.4.1
+Content-Type: application/json
 
-I tre collegamenti sono `5V`, `GND` e `DIN`: il segnale va dal GPIO ESP32 al
-`DIN` della striscia. La massa deve essere comune. La striscia non deve essere
-alimentata dal pin 3.3V o dal GPIO dell'ESP32: per piu' di pochi LED usare un
-alimentatore 5V dimensionato per la striscia, con massa collegata alla massa
-ESP32. Aggiungere una resistenza da circa 330 ohm sul segnale dati e un
-condensatore da circa 1000 uF tra 5V e GND vicino alla striscia.
-
-La striscia viene pilotata con `Adafruit_NeoPixel`. Il comando autenticato
-`POST /led` accetta, ad esempio:
-
-```json
-{"mode":"solid","brightness":80,"red":255,"green":40,"blue":0}
+{"pin":"482917","nonce":"random-app-nonce-lungo-almeno-16-caratteri","proof":"hmac-hex","timestamp":1720000000}
 ```
 
-Per lampeggiare con un intervallo di un secondo:
+Campi richiesti:
 
-```json
-{"mode":"blink","intervalMillis":1000,"brightness":80,"red":255,"green":40,"blue":0}
-```
+- `pin`: PIN del dispositivo.
+- `nonce`: stringa casuale lunga almeno 16 caratteri.
+- `proof`: `HMAC-SHA256(key=PIN, message=nonce)`, in esadecimale minuscolo.
+- `timestamp`: orario Unix in secondi, da usare anche per sincronizzare la sessione.
 
-Per spegnerla:
-
-```json
-{"mode":"off"}
-```
-
-I valori RGB e luminosita' sono compresi tra 0 e 255. `intervalMillis` e'
-compreso tra 50 e 60000 millisecondi. Le impostazioni sono valide fino al
-riavvio; `/status` restituisce sempre i valori attualmente applicati,
-inclusi `intervalMillis` e `blinkOn`.
-
-`POST /register` non richiede autenticazione. Body:
-
-```json
-{"pin":"482917","nonce":"random-app-nonce","proof":"hmac-hex","timestamp":1720000000}
-```
-
-`proof` e' `HMAC-SHA256(key=PIN, message=nonce)`, espresso in esadecimale minuscolo. Il `timestamp` Unix della richiesta viene associato alla sessione. La risposta contiene il token di sessione:
+Risposta:
 
 ```json
 {"registered":true,"sessionToken":"...","timestamp":1720000000}
 ```
 
-Il token viene salvato in NVS. Una nuova registrazione sostituisce il token precedente.
+Conservare `sessionToken` nell'archivio sicuro dell'app.
 
-### Autenticazione delle richieste
+### Autenticazione
 
-Tutte le richieste successive, incluso `GET /stream`, devono includere:
+`POST /led` e `GET /stream` richiedono questi header:
 
-- `X-TIMESTAMP`: timestamp Unix in secondi;
-- `X-API-KEY`: `HMAC-SHA256(key=sessionToken, message=sessionToken + ":" + timestamp)`, in esadecimale minuscolo.
+```http
+X-TIMESTAMP: <timestamp Unix in secondi>
+X-API-KEY: <hmac-hex>
+```
 
-Il timestamp deve differire dall'orologio del dispositivo di massimo 5 secondi. Un errore restituisce HTTP `401`.
+Calcolare `X-API-KEY` come `HMAC-SHA256(key=sessionToken, message=sessionToken + ":" + timestamp)`, in esadecimale minuscolo. Il timestamp deve differire dall'orologio del dispositivo di non piu' di 5 secondi; in caso contrario, o con credenziali non valide, il dispositivo risponde con HTTP `401`.
 
-`GET /stream` restituisce `multipart/x-mixed-replace` con frame JPEG. Il client puo' trasformare ogni parte JPEG nella propria lista di interi.
+### `GET /stream`
 
-## Note di sicurezza
+Richiede autenticazione. Restituisce uno stream `multipart/x-mixed-replace` composto da frame JPEG.
 
-La registrazione e' protetta dal PIN tramite challenge-response: il PIN non viene trasmesso in chiaro. La rete AP usa WPA2 e il token viene persistito in NVS. Per un prodotto con minacce fisiche o traffico oltre la rete locale, aggiungere TLS o un secure element; il progetto e' predisposto per sostituire il trasporto Wi-Fi con BLE senza cambiare il contratto di autenticazione HTTP.
+```http
+GET /stream HTTP/1.1
+Host: 192.168.4.1
+X-TIMESTAMP: 1720000001
+X-API-KEY: <hmac-hex>
+```
+
+Il client deve leggere le parti delimitate da `frame` e decodificare il contenuto `image/jpeg` di ogni parte. Il valore `camera.fps` di `GET /status` viene aggiornato durante lo stream.
+
+### `POST /led`
+
+Richiede autenticazione e una striscia LED configurata. In caso contrario risponde con HTTP `409`.
+
+```http
+POST /led HTTP/1.1
+Host: 192.168.4.1
+Content-Type: application/json
+X-TIMESTAMP: 1720000001
+X-API-KEY: <hmac-hex>
+
+{"mode":"solid","brightness":80,"red":255,"green":40,"blue":0}
+```
+
+Campi:
+
+- `mode`: `off`, `solid` oppure `blink`.
+- `brightness`, `red`, `green`, `blue`: valori interi da 0 a 255.
+- `intervalMillis`: obbligatorio per regolare il lampeggio, da 50 a 60000 millisecondi; se omesso mantiene il valore corrente.
+
+Esempio di lampeggio:
+
+```json
+{"mode":"blink","intervalMillis":1000,"brightness":80,"red":255,"green":40,"blue":0}
+```
+
+Per spegnere la striscia:
+
+```json
+{"mode":"off"}
+```
+
+La risposta conferma la configurazione applicata. Le impostazioni LED vengono mantenute anche dopo il riavvio e sono disponibili in `ledStatus` tramite `GET /status`.
+
+## Errori
+
+Le risposte di errore sono JSON e usano principalmente questi codici HTTP:
+
+- `400`: body JSON o parametri non validi;
+- `401`: dispositivo non registrato, header mancanti, timestamp scaduto o firma non valida;
+- `404`: endpoint inesistente;
+- `409`: striscia LED non configurata.
