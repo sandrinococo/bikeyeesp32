@@ -160,7 +160,7 @@ Collega ESP32 via USB al PC.
 ## installa su device 
 
 Visualizza le porte a cui e' connesso ESP32
-> pio device list -v
+> pio device list 
 
 Ad esempio:
 <code>
@@ -180,4 +180,7 @@ Recupera la COMx che ha PID=nnnn:pppp
 
 > pio run --target upload --upload-port COM4
 
-se COM4 e' la porta a cui e' connesso.
+se COM4 e' la porta a cui e' connesso monitor serial deve essere chiuso.
+
+monitor
+> pio device monitor -p COM4

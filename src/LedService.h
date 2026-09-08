@@ -9,17 +9,27 @@
 
 class LedService {
  public:
+  // Initialize the LED strip and load settings from non-volatile storage.
   void begin(Preferences &preferences);
+  // Advance the blink state when the configured interval expires.
   void update();
+  // Validate and apply a JSON LED control request.
   void handle(WebServer &server);
+  // Append the current LED strip settings to a JSON status object.
   void writeStatus(JsonObject status) const;
 
  private:
+  // Return whether the configured LED strip can be used.
   bool available() const;
+  // Return whether a requested mode is supported.
   bool validMode(const String &mode) const;
+  // Load LED settings from non-volatile storage.
   void loadSettings();
+  // Save the current LED settings to non-volatile storage.
   void saveSettings();
+  // Apply the current settings to the physical LED strip.
   void apply();
+  // Update settings from a parsed JSON request.
   bool updateSettings(JsonDocument &request);
 
   Preferences *preferences = nullptr;
