@@ -36,6 +36,15 @@
 // Disable Wi-Fi power saving to improve AP and stream stability.
 #define WIFI_DISABLE_POWER_SAVE 1
 
+// Enable Arduino OTA firmware updates over Wi-Fi when set to 1.
+#define OTA_ENABLED 1
+// Hostname advertised by the OTA service.
+#define OTA_HOSTNAME DEVICE_NAME
+// Password required to start an OTA update; must match upload_flags in platformio.ini.
+#define OTA_PASSWORD "esp32cam-ota"
+// TCP port used by the OTA service.
+#define OTA_PORT 3232
+
 // ADC GPIO used to measure battery voltage; -1 disables battery measurement.
 #define BATTERY_ADC_PIN -1
 // Battery voltage corresponding to 0% charge, in millivolts.

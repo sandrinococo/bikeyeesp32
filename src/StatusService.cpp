@@ -7,6 +7,7 @@
 #include "BatteryService.h"
 #include "config.h"
 #include "InternalLedService.h"
+#include "OtaService.h"
 
 namespace
 {
@@ -53,8 +54,9 @@ namespace
 }
 
 StatusService::StatusService(LedService &leds, StreamingService &streaming,
-                             BatteryService &battery, InternalLedService &internalLed)
-    : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed) {}
+                             BatteryService &battery, InternalLedService &internalLed,
+                             OtaService &ota)
+    : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed), ota(ota) {}
 
 void StatusService::handle(WebServer &server) const
 {
@@ -90,5 +92,7 @@ void StatusService::handle(WebServer &server) const
   leds.writeStatus(ledStatus);
   JsonObject internalLedStatus = document.createNestedObject("internalLedStatus");
   internalLed.writeStatus(internalLedStatus);
+  JsonObject otaStatus = document.createNestedObject("ota");
+  ota.writeStatus(otaStatus);
   CommunicationUtils::sendJson(server, 200, document);
 }

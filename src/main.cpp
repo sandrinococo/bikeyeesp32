@@ -8,6 +8,7 @@
 #include "ConfigurationService.h"
 #include "InternalLedService.h"
 #include "LedService.h"
+#include "OtaService.h"
 #include "StatusService.h"
 #include "StreamingService.h"
 #include "config.h"
@@ -18,31 +19,40 @@ LedService leds;
 BatteryService battery;
 InternalLedService internalLed;
 StreamingService streaming;
-StatusService status(leds, streaming, battery, internalLed);
-
+OtaService ota;
+StatusService status(leds, streaming, battery, internalLed, ota);
 
 // Funzione di supporto per convertire il valore numerico della modalità in testo leggibile
-const char* getWiFiModeString(wifi_mode_t mode) {
-  switch (mode) {
-    case WIFI_OFF:     return "WIFI_OFF (Spento)";
-    case WIFI_STA:     return "WIFI_STA (Station / Client)";
-    case WIFI_AP:      return "WIFI_AP (Access Point)";
-    case WIFI_AP_STA:  return "WIFI_AP_STA (Access Point + Station)";
-    default:           return "SCONOSCIUTO";
+const char *getWiFiModeString(wifi_mode_t mode)
+{
+  switch (mode)
+  {
+  case WIFI_OFF:
+    return "WIFI_OFF (Spento)";
+  case WIFI_STA:
+    return "WIFI_STA (Station / Client)";
+  case WIFI_AP:
+    return "WIFI_AP (Access Point)";
+  case WIFI_AP_STA:
+    return "WIFI_AP_STA (Access Point + Station)";
+  default:
+    return "SCONOSCIUTO";
   }
 }
 
-
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   configuration.begin();
 
   battery.begin();
   internalLed.begin(battery);
   leds.begin(configuration.storage());
-  if (!streaming.beginCamera()) {
+  if (!streaming.beginCamera())
+  {
     Serial.println("Camera initialization failed");
-    while (true) {
+    while (true)
+    {
       delay(1000);
     }
   }
@@ -60,8 +70,10 @@ void setup() {
       esp_wifi_set_inactive_time(WIFI_IF_AP, AP_INACTIVE_TIMEOUT_SECONDS);
   Serial.println(WiFi.softAPIP());
 
+  ota.begin();
+
   Serial.println("\n=== CONFIGURAZIONE E SPECIFICHE ESP32 ===");
-  
+
   // Modello e Revisione del Chip
   esp_chip_info_t chip_info;
   esp_chip_info(&chip_info);
@@ -97,29 +109,25 @@ void setup() {
   Serial.println("=========================================\n");
   const char *headers[] = {"X-API-KEY", "X-TIMESTAMP"};
   server.collectHeaders(headers, 2);
-  server.on("/status", HTTP_GET, []() {
-    status.handle(server);
-  });
-  server.on("/register", HTTP_POST, []() {
-    configuration.handleRegister(server);
-  });
-  server.on("/led", HTTP_POST, []() {
+  server.on("/status", HTTP_GET, []()
+            { status.handle(server); });
+  server.on("/register", HTTP_POST, []()
+            { configuration.handleRegister(server); });
+  server.on("/led", HTTP_POST, []()
+            {
     if (configuration.authenticate(server)) {
       leds.handle(server);
-    }
-  });
-  server.on("/stream", HTTP_GET, []() {
-    streaming.handle(server, configuration);
-  });
-  server.onNotFound([]() {
-    CommunicationUtils::sendError(server, 404, "not found");
-  });
+    } });
+  server.on("/stream", HTTP_GET, []()
+            { streaming.handle(server, configuration); });
+  server.onNotFound([]()
+                    { CommunicationUtils::sendError(server, 404, "not found"); });
   server.begin();
-
-  
 }
 
-void loop() {
+void loop()
+{
+  ota.update();
   server.handleClient();
   internalLed.update();
   leds.update();

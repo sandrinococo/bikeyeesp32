@@ -18,6 +18,7 @@ Componenti principali:
 - `StatusService`: raccoglie telemetria di sistema, Wi-Fi, camera, batteria e LED per `GET /status`.
 - `StreamingService`: inizializza il sensore OV2640 con il pinout AI Thinker e produce lo stream MJPEG.
 - `LedService`: gestisce la striscia WS2812B/SP620, gli stati `off`, `solid` e `blink` e la persistenza delle impostazioni.
+- `OtaService`: espone l'aggiornamento firmware via Wi-Fi (Arduino OTA) sulla porta 3232.
 
 La configurazione centralizzata e' in `include/config.h`. Il manifest di build e dipendenze e' `platformio.ini`.
 
@@ -57,6 +58,37 @@ Da Visual Studio Code:
 3. Mettere la ESP32-CAM in modalita' bootloader, secondo l'adattatore USB-seriale usato.
 4. Usare `PlatformIO: Upload`.
 5. Aprire `PlatformIO: Serial Monitor` a 115200 baud per leggere l'indirizzo dell'access point e gli eventuali errori della camera.
+
+## Aggiornamento OTA via Wi-Fi
+
+Dopo il primo caricamento via USB, il firmware successivo puo' essere caricato senza cavo. All'avvio `OtaService::begin()` attiva il listener Arduino OTA sull'access point del dispositivo.
+
+Parametri in `include/config.h`:
+
+- `OTA_ENABLED`: `1` abilita il servizio, `0` lo esclude completamente dal binario;
+- `OTA_HOSTNAME`: nome annunciato, di default `DEVICE_NAME`;
+- `OTA_PASSWORD`: password richiesta per avviare l'aggiornamento;
+- `OTA_PORT`: porta TCP, di default `3232`.
+
+Procedura:
+
+1. Collegare il PC alla rete Wi-Fi `ESP32-CAM-AI` (l'ESP32 e' access point, quindi e' il PC a doversi connettere alla scheda).
+2. Verificare che il dispositivo risponda su `http://192.168.4.1/status`; il campo `ota.listening` deve essere `true`.
+3. Lanciare l'upload wireless con l'ambiente dedicato:
+
+```powershell
+pio run -e esp32cam_ota -t upload
+```
+
+Se si cambia `OTA_PASSWORD` occorre aggiornare anche `--auth` in `upload_flags` dentro `platformio.ini`.
+
+Note importanti:
+
+- L'OTA richiede due slot applicativi in flash: `board_build.partitions = min_spiffs.csv` sostituisce lo schema `huge_app.csv` predefinito della board `esp32cam`. Questo primo cambio di partizionamento va caricato **via USB**; dagli aggiornamenti successivi l'OTA funziona.
+- Lo spazio disponibile per l'applicazione scende a circa 1,9 MB per slot.
+- All'avvio dell'aggiornamento il driver della camera viene rilasciato con `esp_camera_deinit()`; lo stream MJPEG non e' disponibile durante l'OTA e la scheda si riavvia al termine.
+- Durante l'OTA l'alimentazione deve essere stabile: un calo di tensione lascia la scheda con un'immagine incompleta e serve di nuovo il cavo USB.
+- Il monitor seriale non e' disponibile via Wi-Fi: per i log resta necessario il collegamento USB oppure va usato `GET /status`.
 
 Da terminale, con PlatformIO Core installato:
 
