@@ -67,12 +67,14 @@
 // Charging LED toggle interval, in milliseconds.
 #define INTERNAL_LED_CHARGING_INTERVAL_MILLIS 1000
 
-// Enable the addressable LED strip when set to 1.
+// Enable the addressable LED strip when set to 1; POST /led can change it at runtime.
 #define LED_STRIP_ENABLED 0
 // GPIO connected to the addressable LED strip.
 #define LED_STRIP_GPIO 13
-// Number of LEDs in the addressable strip.
+// Default number of LEDs in the addressable strip; POST /led can change it at runtime.
 #define LED_STRIP_COUNT 0
+// Highest LED count accepted by POST /led.
+#define LED_STRIP_MAX_COUNT 50
 
 // Default LED brightness; values received by POST /led are saved in NVS.
 #define LED_STRIP_BRIGHTNESS 0

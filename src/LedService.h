@@ -7,8 +7,9 @@
 
 #include "config.h"
 
-class LedService {
- public:
+class LedService
+{
+public:
   // Initialize the LED strip and load settings from non-volatile storage.
   void begin(Preferences &preferences);
   // Advance the blink state when the configured interval expires.
@@ -18,7 +19,7 @@ class LedService {
   // Append the current LED strip settings to a JSON status object.
   void writeStatus(JsonObject status) const;
 
- private:
+private:
   // Return whether the configured LED strip can be used.
   bool available() const;
   // Return whether a requested mode is supported.
@@ -27,6 +28,8 @@ class LedService {
   void loadSettings();
   // Save the current LED settings to non-volatile storage.
   void saveSettings();
+  // Re-initialize the strip driver with the current LED count.
+  void configureStrip();
   // Apply the current settings to the physical LED strip.
   void apply();
   // Update settings from a parsed JSON request.
@@ -35,6 +38,8 @@ class LedService {
   Preferences *preferences = nullptr;
   Adafruit_NeoPixel strip;
   String mode = LED_STRIP_MODE;
+  bool enabled = LED_STRIP_ENABLED != 0;
+  uint16_t count = LED_STRIP_COUNT;
   uint8_t brightness = LED_STRIP_BRIGHTNESS;
   uint8_t red = LED_STRIP_RED;
   uint8_t green = LED_STRIP_GREEN;

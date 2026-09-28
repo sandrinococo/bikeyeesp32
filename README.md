@@ -44,7 +44,8 @@ La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazio
   "battery": {"present": false, "levelPercent": null, "voltageMv": 0,
     "charging": false, "full": false, "chargeDetection": "unavailable",
     "sampleIntervalMillis": 1000, "averageSamples": 10, "samplesCollected": 0},
-  "ledStatus": {"present": false, "configured": false, "mode": "off"},
+  "ledStatus": {"present": false, "configured": false, "enabled": false,
+    "count": 0, "maxCount": 50, "mode": "off"},
   "internalLedStatus": {"present": true, "colorable": false,
     "gpio": 4, "state": "off", "on": false}
 }
@@ -105,7 +106,7 @@ Il client deve leggere le parti delimitate da `frame` e decodificare il contenut
 
 ### `POST /led`
 
-Richiede autenticazione e una striscia LED configurata. In caso contrario risponde con HTTP `409`.
+Richiede autenticazione e un GPIO dati valido per la striscia LED. In caso contrario risponde con HTTP `409`.
 
 ```http
 POST /led HTTP/1.1
@@ -114,11 +115,13 @@ Content-Type: application/json
 X-TIMESTAMP: 1720000001
 X-API-KEY: <hmac-hex>
 
-{"mode":"solid","brightness":80,"red":255,"green":40,"blue":0}
+{"enabled":true,"count":24,"mode":"solid","brightness":80,"red":255,"green":40,"blue":0}
 ```
 
 Campi:
 
+- `enabled`: booleano, abilita o disabilita la striscia; se omesso mantiene il valore corrente.
+- `count`: numero di LED presenti nella striscia, da 0 a 50; se omesso mantiene il valore corrente.
 - `mode`: `off`, `solid` oppure `blink`.
 - `brightness`, `red`, `green`, `blue`: valori interi da 0 a 255.
 - `intervalMillis`: opzionale, da 50 a 60000 millisecondi; se omesso mantiene il valore corrente.
@@ -135,7 +138,13 @@ Per spegnere la striscia:
 {"mode":"off"}
 ```
 
-La risposta conferma la configurazione applicata. Le impostazioni LED vengono mantenute anche dopo il riavvio e sono disponibili in `ledStatus` tramite `GET /status`.
+Per disabilitare del tutto la striscia:
+
+```json
+{"enabled":false}
+```
+
+La risposta conferma la configurazione applicata. Le impostazioni LED, incluse `enabled` e `count`, vengono mantenute anche dopo il riavvio e sono disponibili in `ledStatus` tramite `GET /status`.
 
 ## Errori
 

@@ -37,7 +37,7 @@ Prima del build controllare `include/config.h`:
 - configurazione opzionale del partitore batteria;
 - abilitazione e parametri della striscia LED.
 
-Per abilitare una striscia WS2812B/SP620 impostare `LED_STRIP_ENABLED` a `1`, `LED_STRIP_COUNT` al numero reale di LED e, se necessario, un GPIO dati non usato dalla camera. Il valore predefinito e' GPIO 13.
+Per abilitare una striscia WS2812B/SP620 impostare `LED_STRIP_ENABLED` a `1` e `LED_STRIP_COUNT` al numero reale di LED: sono soltanto valori predefiniti, perche' `POST /led` puo' cambiare a runtime sia l'abilitazione sia il numero di LED (massimo `LED_STRIP_MAX_COUNT`, 50) salvandoli in NVS. Se necessario usare un GPIO dati non usato dalla camera. Il valore predefinito e' GPIO 13.
 
 La striscia usa il protocollo NeoPixel a un filo, 800 kHz, ordine GRB. Collegare `DIN` al GPIO selezionato e condividere il GND con l'ESP32. Alimentare la striscia con un 5 V adeguato al numero di LED, non dal GPIO o dal pin 3.3 V dell'ESP32. Si raccomandano una resistenza da circa 330 ohm sul segnale e un condensatore da circa 1000 uF tra 5 V e GND vicino alla striscia.
 

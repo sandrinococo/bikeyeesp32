@@ -8,38 +8,57 @@
 #include "config.h"
 #include "InternalLedService.h"
 
-namespace {
-const char *frameSizeName(framesize_t frameSize) {
-  switch (frameSize) {
-    case FRAMESIZE_QQVGA: return "QQVGA";
-    case FRAMESIZE_QVGA: return "QVGA";
-    case FRAMESIZE_VGA: return "VGA";
-    case FRAMESIZE_SVGA: return "SVGA";
-    case FRAMESIZE_XGA: return "XGA";
-    case FRAMESIZE_SXGA: return "SXGA";
-    case FRAMESIZE_UXGA: return "UXGA";
-    default: return "unknown";
+namespace
+{
+  const char *frameSizeName(framesize_t frameSize)
+  {
+    switch (frameSize)
+    {
+    case FRAMESIZE_QQVGA:
+      return "QQVGA";
+    case FRAMESIZE_QVGA:
+      return "QVGA";
+    case FRAMESIZE_VGA:
+      return "VGA";
+    case FRAMESIZE_SVGA:
+      return "SVGA";
+    case FRAMESIZE_XGA:
+      return "XGA";
+    case FRAMESIZE_SXGA:
+      return "SXGA";
+    case FRAMESIZE_UXGA:
+      return "UXGA";
+    default:
+      return "unknown";
+    }
   }
-}
 
-const char *pixelFormatName(pixformat_t pixelFormat) {
-  switch (pixelFormat) {
-    case PIXFORMAT_JPEG: return "JPEG";
-    case PIXFORMAT_RGB565: return "RGB565";
-    case PIXFORMAT_YUV422: return "YUV422";
-    case PIXFORMAT_GRAYSCALE: return "GRAYSCALE";
-    default: return "unknown";
+  const char *pixelFormatName(pixformat_t pixelFormat)
+  {
+    switch (pixelFormat)
+    {
+    case PIXFORMAT_JPEG:
+      return "JPEG";
+    case PIXFORMAT_RGB565:
+      return "RGB565";
+    case PIXFORMAT_YUV422:
+      return "YUV422";
+    case PIXFORMAT_GRAYSCALE:
+      return "GRAYSCALE";
+    default:
+      return "unknown";
+    }
   }
-}
 
 }
 
 StatusService::StatusService(LedService &leds, StreamingService &streaming,
-               BatteryService &battery, InternalLedService &internalLed)
-  : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed) {}
+                             BatteryService &battery, InternalLedService &internalLed)
+    : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed) {}
 
-void StatusService::handle(WebServer &server) const {
-  StaticJsonDocument<1024> document;
+void StatusService::handle(WebServer &server) const
+{
+  StaticJsonDocument<1536> document;
   sensor_t *sensor = esp_camera_sensor_get();
   document["tipo"] = DEVICE_TYPE;
   document["version"] = DEVICE_VERSION;
@@ -55,7 +74,8 @@ void StatusService::handle(WebServer &server) const {
   document["camera"]["resolution"] = frameSizeName(CAMERA_FRAME_SIZE);
   document["camera"]["format"] = pixelFormatName(PIXFORMAT_JPEG);
   document["camera"]["fps"] = streaming.measuredFps();
-  if (sensor != nullptr) {
+  if (sensor != nullptr)
+  {
     JsonObject settings = document["camera"].createNestedObject("settings");
     settings["brightness"] = sensor->status.brightness;
     settings["contrast"] = sensor->status.contrast;
