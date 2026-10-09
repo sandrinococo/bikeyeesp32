@@ -27,6 +27,7 @@ La configurazione centralizzata e' in `include/config.h`. Il manifest di build e
 - Scheda ESP32-CAM AI Thinker.
 - Adattatore USB-seriale per il caricamento.
 - Alimentazione stabile a 5 V durante programmazione e uso della camera.
+- PlatformIO e' installato in %USERPROFILE%\.platformio\penv\Scripts e per attivarlo occorre %USERPROFILE%\.platformio\penv\Scripts\activate
 
 ## Configurazione
 
