@@ -1,5 +1,6 @@
 #include <Arduino.h>
-#include <WebServer.h>
+#include <AsyncJson.h>
+#include <ESPAsyncWebServer.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 
@@ -14,7 +15,7 @@
 
 const char BUILD_DATETIME[] = __DATE__ " " __TIME__;
 
-WebServer server(80);
+AsyncWebServer server(80);
 ConfigurationService configuration;
 LedService leds;
 BatteryService battery;
@@ -98,24 +99,30 @@ void setup() {
                 static_cast<unsigned>(AP_INACTIVE_TIMEOUT_SECONDS));
 
   Serial.println("=========================================\n");
-  const char *headers[] = {"X-API-KEY", "X-TIMESTAMP"};
-  server.collectHeaders(headers, 2);
-  server.on("/status", HTTP_GET, []() {
-    status.handle(server);
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    status.handle(request);
   });
-  server.on("/register", HTTP_POST, []() {
-    configuration.handleRegister(server);
+  auto *registerHandler = new AsyncCallbackJsonWebHandler(
+      "/register", [](AsyncWebServerRequest *request, JsonVariant &body) {
+        configuration.handleRegister(request, body.as<JsonVariantConst>());
+      });
+  registerHandler->setMethod(HTTP_POST);
+  registerHandler->setMaxContentLength(384);
+  server.addHandler(registerHandler);
+  auto *ledHandler = new AsyncCallbackJsonWebHandler(
+      "/led", [](AsyncWebServerRequest *request, JsonVariant &body) {
+        if (configuration.authenticate(request)) {
+          leds.handle(request, body.as<JsonVariantConst>());
+        }
+      });
+  ledHandler->setMethod(HTTP_POST);
+  ledHandler->setMaxContentLength(384);
+  server.addHandler(ledHandler);
+  server.on("/stream", HTTP_GET, [](AsyncWebServerRequest *request) {
+    streaming.handle(request, configuration);
   });
-  server.on("/led", HTTP_POST, []() {
-    if (configuration.authenticate(server)) {
-      leds.handle(server);
-    }
-  });
-  server.on("/stream", HTTP_GET, []() {
-    streaming.handle(server, configuration);
-  });
-  server.onNotFound([]() {
-    CommunicationUtils::sendError(server, 404, "not found");
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    CommunicationUtils::sendError(request, 404, "not found");
   });
   server.begin();
 
@@ -123,7 +130,6 @@ void setup() {
 }
 
 void loop() {
-  server.handleClient();
   internalLed.update();
   leds.update();
 }

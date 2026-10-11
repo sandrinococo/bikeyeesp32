@@ -1,8 +1,8 @@
 """HTTP smoke tests for the ESP32-CAM device service.
 
 Run directly from VS Code or a terminal:
-    python tests/test_device_http.py
-    python tests/test_device_http.py --url http://192.168.4.1 --verbose
+    python tests/test_device_httpr2.py
+    python tests/test_device_httpr2.py --url http://192.168.4.1 --verbose
 """
 
 from __future__ import annotations
@@ -226,8 +226,10 @@ class DeviceHttpClient:
             raise AssertionError("/led response must be a JSON object")
         return status_code, response
 
-    def stream_probe(self, api_key: str, timestamp: str) -> tuple[int, object, bytes]:
-        """Open /stream, read its headers and a small first-frame probe."""
+    def open_stream(
+        self, api_key: str, timestamp: str
+    ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
+        """Open /stream and leave its connection available to the caller."""
         url = f"{self.base_url.rstrip('/')}/stream"
         parsed_url = urlsplit(url)
         connection = http.client.HTTPConnection(
@@ -245,8 +247,10 @@ class DeviceHttpClient:
             },
         )
         self._log_request(request)
+        path = parsed_url.path or "/"
+        if parsed_url.query:
+            path += f"?{parsed_url.query}"
         try:
-            path = parsed_url.path or "/"
             connection.request(
                 "GET",
                 path,
@@ -256,12 +260,20 @@ class DeviceHttpClient:
                     "X-API-KEY": api_key,
                 },
             )
-            response = connection.getresponse()
+            return connection, connection.getresponse()
+        except (OSError, TimeoutError) as error:
+            self._force_close_connection(connection)
+            raise AssertionError(f"device is unreachable at {url}: {error}") from error
+
+    def stream_probe(self, api_key: str, timestamp: str) -> tuple[int, object, bytes]:
+        """Open /stream, read its headers and a small first-frame probe."""
+        connection, response = self.open_stream(api_key, timestamp)
+        try:
             status_code = response.status
             response_headers = response.headers
             response_body = response.read(512) if status_code == 200 else response.read()
         except (OSError, TimeoutError) as error:
-            raise AssertionError(f"device is unreachable at {url}: {error}") from error
+            raise AssertionError(f"stream probe failed: {error}") from error
         finally:
             self._force_close_connection(connection)
 
@@ -382,7 +394,10 @@ class DeviceHttpTest(unittest.TestCase):
         self.assertTrue(status.get("running"), "device reports running=false")
         self.assertIn("version", status)
         self.assertIsInstance(status.get("buildDateTime"), str)
-        self.assertGreater(len(status["buildDateTime"]), 0)
+        self.assertRegex(
+            status["buildDateTime"],
+            r"^[A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2}$",
+        )
         self.assertIn("serial", status)
         self.assertIsInstance(status.get("ram"), dict)
         self.assertIsInstance(status.get("wifi"), dict)
@@ -529,6 +544,61 @@ class DeviceHttpTest(unittest.TestCase):
         content_type = headers.get("Content-Type", "")
         self.assertIn("multipart/x-mixed-replace", content_type)
         self.assertIn(b"--frame", first_bytes)
+
+    def test_58_stream_is_concurrent_with_status(self) -> None:
+        """An open MJPEG stream must not block status or allow another stream."""
+        session_token = self.client.register()["sessionToken"]
+
+        def signed_headers() -> tuple[str, str]:
+            timestamp = str(int(time.time()))
+            message = f"{session_token}:{timestamp}"
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            return timestamp, api_key
+
+        stream_connection = None
+        second_connection = None
+        try:
+            timestamp, api_key = signed_headers()
+            stream_connection, stream_response = self.client.open_stream(api_key, timestamp)
+            self.assertEqual(
+                stream_response.status,
+                200,
+                f"stream returned HTTP {stream_response.status}",
+            )
+            self.assertIn(
+                "multipart/x-mixed-replace",
+                stream_response.headers.get("Content-Type", ""),
+            )
+            first_bytes = stream_response.read(512)
+            self.assertIn(b"--frame", first_bytes)
+
+            status = self.client.get_status()
+            self.assertTrue(status.get("running"), "status did not complete during stream")
+
+            second_timestamp, second_api_key = signed_headers()
+            second_connection, second_response = self.client.open_stream(
+                second_api_key, second_timestamp
+            )
+            second_body = second_response.read()
+            self.assertEqual(
+                second_response.status,
+                503,
+                f"second stream returned HTTP {second_response.status}: {second_body!r}",
+            )
+            try:
+                error = json.loads(second_body)
+            except json.JSONDecodeError as error:
+                self.fail(f"second stream returned invalid JSON: {second_body!r}")
+            self.assertEqual(error.get("error"), "stream is already active")
+        finally:
+            if second_connection is not None:
+                self.client._force_close_connection(second_connection)
+            if stream_connection is not None:
+                self.client._force_close_connection(stream_connection)
 
     def test_13_battery_status_contract(self) -> None:
         """Battery status must expose measurement and charge-detection state."""

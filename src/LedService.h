@@ -2,8 +2,10 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <ArduinoJson.h>
+#include <ESPAsyncWebServer.h>
 #include <Preferences.h>
-#include <WebServer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "config.h"
 
@@ -15,7 +17,7 @@ public:
   // Advance the blink state when the configured interval expires.
   void update();
   // Validate and apply a JSON LED control request.
-  void handle(WebServer &server);
+  void handle(AsyncWebServerRequest *request, JsonVariantConst body);
   // Append the current LED strip settings to a JSON status object.
   void writeStatus(JsonObject status) const;
 
@@ -33,7 +35,7 @@ private:
   // Apply the current settings to the physical LED strip.
   void apply();
   // Update settings from a parsed JSON request.
-  bool updateSettings(JsonDocument &request);
+  bool updateSettings(JsonVariantConst request);
 
   Preferences *preferences = nullptr;
   Adafruit_NeoPixel strip;
@@ -47,4 +49,5 @@ private:
   uint32_t intervalMillis = LED_STRIP_INTERVAL_MILLIS;
   bool blinkOn = false;
   uint32_t lastToggleMillis = 0;
+  mutable SemaphoreHandle_t stateMutex = nullptr;
 };

@@ -1,6 +1,9 @@
 #include "StreamingService.h"
 
 #include <Arduino.h>
+#include <algorithm>
+#include <functional>
+#include <memory>
 
 #include "CommunicationUtils.h"
 #include "ConfigurationService.h"
@@ -61,50 +64,105 @@ bool StreamingService::beginCamera() {
 }
 
 float StreamingService::measuredFps() const {
-  return fps;
+  return fps.load();
 }
 
-void StreamingService::handle(WebServer &server, ConfigurationService &configuration) {
-  if (!configuration.authenticate(server)) {
+namespace {
+struct StreamState {
+  camera_fb_t *frame = nullptr;
+  char header[96] = {};
+  size_t headerLength = 0;
+  size_t headerOffset = 0;
+  size_t frameOffset = 0;
+  size_t footerOffset = 0;
+  uint32_t frameCount = 0;
+  uint32_t startMillis = millis();
+  std::function<void()> onDestroy;
+
+  ~StreamState() {
+    if (frame != nullptr) {
+      esp_camera_fb_return(frame);
+    }
+    if (onDestroy) {
+      onDestroy();
+    }
+  }
+};
+
+size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &recordFps,
+                       uint8_t *buffer, size_t maxLength) {
+  size_t written = 0;
+  while (written < maxLength) {
+    if (state.frame == nullptr) {
+      state.frame = esp_camera_fb_get();
+      if (state.frame == nullptr) {
+        return written;
+      }
+      state.headerLength = snprintf(
+          state.header, sizeof(state.header),
+          "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
+          static_cast<unsigned>(state.frame->len));
+      state.headerOffset = 0;
+      state.frameOffset = 0;
+      state.footerOffset = 0;
+    }
+
+    if (state.headerOffset < state.headerLength) {
+      const size_t count = std::min(maxLength - written, state.headerLength - state.headerOffset);
+      memcpy(buffer + written, state.header + state.headerOffset, count);
+      state.headerOffset += count;
+      written += count;
+      continue;
+    }
+
+    if (state.frameOffset < state.frame->len) {
+      const size_t count = std::min(maxLength - written, state.frame->len - state.frameOffset);
+      memcpy(buffer + written, state.frame->buf + state.frameOffset, count);
+      state.frameOffset += count;
+      written += count;
+      continue;
+    }
+
+    static const uint8_t footer[] = "\r\n";
+    if (state.footerOffset < sizeof(footer) - 1) {
+      const size_t count = std::min(maxLength - written, sizeof(footer) - 1 - state.footerOffset);
+      memcpy(buffer + written, footer + state.footerOffset, count);
+      state.footerOffset += count;
+      written += count;
+      continue;
+    }
+
+    esp_camera_fb_return(state.frame);
+    state.frame = nullptr;
+    ++state.frameCount;
+    const uint32_t elapsed = millis() - state.startMillis;
+    if (elapsed >= 1000) {
+      recordFps(state.frameCount * 1000.0f / elapsed);
+    }
+    return written;
+  }
+  return written;
+}
+}
+
+void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationService &configuration) {
+  if (!configuration.authenticate(request)) {
+    return;
+  }
+  bool expected = false;
+  if (!streamActive.compare_exchange_strong(expected, true)) {
+    CommunicationUtils::sendError(request, 503, "stream is already active");
     return;
   }
 
-  WiFiClient client = server.client();
-  uint32_t frameCount = 0;
-  const uint32_t streamStart = millis();
-  
-  String head = "HTTP/1.1 200 OK\r\n"
-                "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
-                "Cache-Control: no-cache\r\n\r\n";
-  client.write((const uint8_t*)head.c_str(), head.length());
-
-  while (client.connected()) {
-    camera_fb_t *frame = esp_camera_fb_get();
-    if (frame == nullptr) {
-      break;
-    }
-
-    char partHeader[64];
-    int headerLen = snprintf(partHeader, sizeof(partHeader), "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", frame->len);
-
-    size_t writtenHeader = client.write((const uint8_t*)partHeader, headerLen);
-    size_t writtenData = client.write(frame->buf, frame->len);
-    size_t writtenFooter = client.write((const uint8_t*)"\r\n", 2);
-
-    esp_camera_fb_return(frame);
-
-    // Se la scrittura fallisce, interrompi il ciclo per evitare crash o loop infiniti
-    if (writtenHeader == 0 || writtenData == 0 || writtenFooter == 0) {
-      break;
-    }
-
-    ++frameCount;
-    const uint32_t elapsed = millis() - streamStart;
-    if (elapsed >= 1000) {
-      fps = frameCount * 1000.0f / elapsed;
-    }
-    
-    yield(); // Cede il controllo al sistema operativo per gestire il Wi-Fi
-  }
-  client.stop();
+  auto state = std::make_shared<StreamState>();
+  state->onDestroy = [this]() { streamActive.store(false); };
+  std::function<void(float)> recordFps = [this](float value) { fps.store(value); };
+  AsyncWebServerResponse *response = request->beginChunkedResponse(
+      "multipart/x-mixed-replace; boundary=frame",
+      [state, recordFps](uint8_t *buffer, size_t maxLength, size_t) {
+        return fillStreamChunk(*state, recordFps, buffer, maxLength);
+      });
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
 }

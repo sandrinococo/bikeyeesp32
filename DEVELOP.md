@@ -2,7 +2,7 @@
 
 ## Architettura
 
-Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP sulla porta 80.
+Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP asincrone con ESPAsyncWebServer sulla porta 80. Lo stream MJPEG e' una risposta a chunk, quindi le altre route restano gestibili mentre il client riceve i frame. E' ammesso un solo stream attivo per volta.
 
 `src/main.cpp` compone i servizi, inizializza l'hardware e registra il routing:
 
@@ -19,7 +19,7 @@ Componenti principali:
 - `StreamingService`: inizializza il sensore OV2640 con il pinout AI Thinker e produce lo stream MJPEG.
 - `LedService`: gestisce la striscia WS2812B/SP620, gli stati `off`, `solid` e `blink` e la persistenza delle impostazioni.
 
-La configurazione centralizzata e' in `include/config.h`. Il manifest di build e dipendenze e' `platformio.ini`.
+La configurazione centralizzata e' in `include/config.h`. Il manifest di build e dipendenze e' `platformio.ini`, che include ESPAsyncWebServer e AsyncTCP.
 
 ## Requisiti
 
@@ -69,7 +69,7 @@ pio device monitor --baud 115200
 
 ## Test HTTP
 
-Il test [tests/test_device_http.py](tests/test_device_http.py) usa solo la
+Il test [tests/test_device_httpr2.py](tests/test_device_httpr2.py) usa solo la
 libreria standard Python e verifica che la scheda risponda a `GET /status`.
 Controlla anche il contratto JSON di batteria, LED interno e striscia LED.
 
@@ -80,19 +80,19 @@ Con il computer collegato alla rete Wi-Fi della scheda eseguire:
 ```
 
 ```powershell
-python tests/test_device_http.py --verbose
+python tests/test_device_httpr2.py --verbose
 ```
 
 Per usare un indirizzo o un timeout diversi:
 
 ```powershell
-python tests/test_device_http.py --url http://192.168.4.1 --timeout 10
+python tests/test_device_httpr2.py --url http://192.168.4.1 --timeout 10
 ```
 
 Il test `test_register` usa il PIN predefinito `482917`. Per un PIN diverso:
 
 ```powershell
-python tests/test_device_http.py --pin 123456
+python tests/test_device_httpr2.py --pin 123456
 ```
 
 In alternativa impostare `ESP32_DEVICE_PIN` nell'ambiente.
@@ -137,8 +137,8 @@ Il target definito in `platformio.ini` e' `esp32cam`, con framework Arduino. Il 
 1. Inizializza seriale e archivio NVS.
 2. Carica ed applica le impostazioni LED salvate.
 3. Inizializza la camera; in caso di errore si ferma e stampa `Camera initialization failed` sulla seriale.
-4. Avvia l'access point e il server HTTP sulla porta 80.
-5. Nel loop gestisce le richieste HTTP e aggiorna il lampeggio LED.
+4. Avvia l'access point e il server HTTP asincrono sulla porta 80.
+5. Il loop aggiorna il lampeggio LED; le richieste HTTP sono gestite dal server asincrono.
 
 L'orologio del dispositivo viene allineato durante `POST /register`, usando il timestamp ricevuto. Il token e l'offset temporale sono persistiti in NVS.
 

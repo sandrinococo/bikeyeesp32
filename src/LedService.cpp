@@ -3,8 +3,35 @@
 #include "CommunicationUtils.h"
 #include "config.h"
 
+namespace
+{
+  class ServiceLock
+  {
+  public:
+    explicit ServiceLock(SemaphoreHandle_t mutex) : mutex(mutex)
+    {
+      if (mutex != nullptr)
+      {
+        xSemaphoreTake(mutex, portMAX_DELAY);
+      }
+    }
+
+    ~ServiceLock()
+    {
+      if (mutex != nullptr)
+      {
+        xSemaphoreGive(mutex);
+      }
+    }
+
+  private:
+    SemaphoreHandle_t mutex;
+  };
+}
+
 void LedService::begin(Preferences &storage)
 {
+  stateMutex = xSemaphoreCreateMutex();
   preferences = &storage;
   loadSettings();
   configureStrip();
@@ -103,7 +130,7 @@ void LedService::apply()
   strip.show();
 }
 
-bool LedService::updateSettings(JsonDocument &request)
+bool LedService::updateSettings(JsonVariantConst request)
 {
   const char *requestedMode = request["mode"] | "off";
   const bool requestedEnabled = request["enabled"] | enabled;
@@ -142,43 +169,45 @@ bool LedService::updateSettings(JsonDocument &request)
   return true;
 }
 
-void LedService::handle(WebServer &server)
+void LedService::handle(AsyncWebServerRequest *request, JsonVariantConst body)
 {
   if (LED_STRIP_GPIO < 0)
   {
-    CommunicationUtils::sendError(server, 409, "led strip is not configured");
+    CommunicationUtils::sendError(request, 409, "led strip is not configured");
     return;
   }
-
-  StaticJsonDocument<256> request;
-  if (!CommunicationUtils::parseJsonBody(server, request))
+  StaticJsonDocument<256> response;
+  bool updated = false;
   {
-    CommunicationUtils::sendError(server, 400, "invalid json");
-    return;
+    ServiceLock lock(stateMutex);
+    updated = updateSettings(body);
+    if (updated)
+    {
+      response["updated"] = true;
+      response["enabled"] = enabled;
+      response["count"] = count;
+      response["mode"] = mode;
+      response["brightness"] = brightness;
+      response["red"] = red;
+      response["green"] = green;
+      response["blue"] = blue;
+      response["intervalMillis"] = intervalMillis;
+    }
   }
-  if (!updateSettings(request))
+  if (!updated)
   {
     CommunicationUtils::sendError(
-        server, 400,
+        request, 400,
         "mode must be off, solid or blink; count must be 0..50; intervalMillis must be 50..60000; color values must be 0..255");
     return;
   }
 
-  StaticJsonDocument<256> response;
-  response["updated"] = true;
-  response["enabled"] = enabled;
-  response["count"] = count;
-  response["mode"] = mode;
-  response["brightness"] = brightness;
-  response["red"] = red;
-  response["green"] = green;
-  response["blue"] = blue;
-  response["intervalMillis"] = intervalMillis;
-  CommunicationUtils::sendJson(server, 200, response);
+  CommunicationUtils::sendJson(request, 200, response);
 }
 
 void LedService::writeStatus(JsonObject status) const
 {
+  ServiceLock lock(stateMutex);
   status["present"] = available();
   status["configured"] = enabled;
   status["enabled"] = enabled;
@@ -196,6 +225,7 @@ void LedService::writeStatus(JsonObject status) const
 
 void LedService::update()
 {
+  ServiceLock lock(stateMutex);
   if (!available() || mode != "blink")
   {
     return;

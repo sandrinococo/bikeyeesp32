@@ -17,20 +17,16 @@ String toHex(const uint8_t *bytes, size_t length) {
 }
 
 namespace CommunicationUtils {
-void sendJson(WebServer &server, int statusCode, JsonDocument &document) {
+void sendJson(AsyncWebServerRequest *request, int statusCode, JsonDocument &document) {
   String payload;
   serializeJson(document, payload);
-  server.send(statusCode, "application/json", payload);
+  request->send(statusCode, "application/json", payload);
 }
 
-void sendError(WebServer &server, int statusCode, const char *message) {
+void sendError(AsyncWebServerRequest *request, int statusCode, const char *message) {
   StaticJsonDocument<192> document;
   document["error"] = message;
-  sendJson(server, statusCode, document);
-}
-
-bool parseJsonBody(WebServer &server, JsonDocument &document) {
-  return !deserializeJson(document, server.arg("plain"));
+  sendJson(request, statusCode, document);
 }
 
 String hmacSha256(const String &key, const String &message) {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <WebServer.h>
+#include <ESPAsyncWebServer.h>
 
 #include "LedService.h"
 #include "StreamingService.h"
@@ -14,7 +14,7 @@ class StatusService {
   StatusService(LedService &leds, StreamingService &streaming,
                 BatteryService &battery, InternalLedService &internalLed);
   // Handle the unauthenticated GET /status endpoint.
-  void handle(WebServer &server) const;
+  void handle(AsyncWebServerRequest *request) const;
 
  private:
   LedService &leds;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 class BatteryService;
 
@@ -25,4 +27,5 @@ class InternalLedService {
   State currentState = State::Off;
   bool isOn = false;
   uint32_t lastToggleMillis = 0;
+  mutable SemaphoreHandle_t stateMutex = nullptr;
 };

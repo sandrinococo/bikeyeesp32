@@ -5,7 +5,28 @@
 #include "BatteryService.h"
 #include "config.h"
 
+namespace {
+class ServiceLock {
+ public:
+  explicit ServiceLock(SemaphoreHandle_t mutex) : mutex(mutex) {
+    if (mutex != nullptr) {
+      xSemaphoreTake(mutex, portMAX_DELAY);
+    }
+  }
+
+  ~ServiceLock() {
+    if (mutex != nullptr) {
+      xSemaphoreGive(mutex);
+    }
+  }
+
+ private:
+  SemaphoreHandle_t mutex;
+};
+}
+
 void InternalLedService::begin(BatteryService &batteryService) {
+  stateMutex = xSemaphoreCreateMutex();
   battery = &batteryService;
 #if INTERNAL_LED_GPIO >= 0
   pinMode(INTERNAL_LED_GPIO, OUTPUT);
@@ -40,6 +61,7 @@ void InternalLedService::apply(bool on) {
 }
 
 void InternalLedService::update() {
+  ServiceLock lock(stateMutex);
   if (battery == nullptr) {
     return;
   }
@@ -69,6 +91,7 @@ void InternalLedService::update() {
 }
 
 void InternalLedService::writeStatus(JsonObject status) const {
+  ServiceLock lock(stateMutex);
   const char *stateName = "off";
   if (currentState == State::LowBattery) {
     stateName = "lowBattery";

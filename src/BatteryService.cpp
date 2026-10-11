@@ -5,6 +5,24 @@
 #include "config.h"
 
 namespace {
+class ServiceLock {
+ public:
+  explicit ServiceLock(SemaphoreHandle_t mutex) : mutex(mutex) {
+    if (mutex != nullptr) {
+      xSemaphoreTake(mutex, portMAX_DELAY);
+    }
+  }
+
+  ~ServiceLock() {
+    if (mutex != nullptr) {
+      xSemaphoreGive(mutex);
+    }
+  }
+
+ private:
+  SemaphoreHandle_t mutex;
+};
+
 int toPercent(float voltage) {
   const float percentage = (voltage - BATTERY_MIN_MV) * 100.0f /
                           (BATTERY_MAX_MV - BATTERY_MIN_MV);
@@ -13,6 +31,7 @@ int toPercent(float voltage) {
 }
 
 void BatteryService::begin() {
+  stateMutex = xSemaphoreCreateMutex();
 #if BATTERY_ADC_PIN >= 0
   pinMode(BATTERY_ADC_PIN, INPUT);
 #endif
@@ -24,6 +43,7 @@ void BatteryService::begin() {
 }
 
 void BatteryService::update() {
+  ServiceLock lock(stateMutex);
   const uint32_t now = millis();
   if (now - lastSampleMillis < BATTERY_SAMPLE_INTERVAL_MILLIS) {
     return;
@@ -58,18 +78,22 @@ bool BatteryService::hasMeasurement() const {
 }
 
 bool BatteryService::isCharging() const {
+  ServiceLock lock(stateMutex);
   return charging;
 }
 
 bool BatteryService::isFull() const {
+  ServiceLock lock(stateMutex);
   return full;
 }
 
 int BatteryService::levelPercent() const {
+  ServiceLock lock(stateMutex);
   return level;
 }
 
 void BatteryService::writeStatus(JsonObject status) const {
+  ServiceLock lock(stateMutex);
   status["present"] = hasMeasurement();
   status["voltageMv"] = hasMeasurement() ? voltageMv : 0;
   if (hasMeasurement()) {

@@ -56,7 +56,7 @@ StatusService::StatusService(LedService &leds, StreamingService &streaming,
                              BatteryService &battery, InternalLedService &internalLed)
     : leds(leds), streaming(streaming), battery(battery), internalLed(internalLed) {}
 
-void StatusService::handle(WebServer &server) const
+void StatusService::handle(AsyncWebServerRequest *request) const
 {
   StaticJsonDocument<1536> document;
   sensor_t *sensor = esp_camera_sensor_get();
@@ -91,5 +91,5 @@ void StatusService::handle(WebServer &server) const
   leds.writeStatus(ledStatus);
   JsonObject internalLedStatus = document.createNestedObject("internalLedStatus");
   internalLed.writeStatus(internalLedStatus);
-  CommunicationUtils::sendJson(server, 200, document);
+  CommunicationUtils::sendJson(request, 200, document);
 }

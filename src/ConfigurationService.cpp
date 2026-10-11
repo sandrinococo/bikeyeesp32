@@ -19,16 +19,20 @@ int64_t ConfigurationService::deviceUnixTime() const {
   return static_cast<int64_t>(millis() / 1000ULL) + clockOffsetSeconds;
 }
 
-bool ConfigurationService::authenticate(WebServer &server) {
+bool ConfigurationService::authenticate(AsyncWebServerRequest *request) {
   if (sessionToken.isEmpty()) {
-    CommunicationUtils::sendError(server, 401, "device is not registered");
+    CommunicationUtils::sendError(request, 401, "device is not registered");
     return false;
   }
 
-  const String timestampHeader = server.header("X-TIMESTAMP");
-  const String apiKey = server.header("X-API-KEY");
+  const String timestampHeader = request->hasHeader("X-TIMESTAMP")
+                                     ? request->getHeader("X-TIMESTAMP")->value()
+                                     : String();
+  const String apiKey = request->hasHeader("X-API-KEY")
+                            ? request->getHeader("X-API-KEY")->value()
+                            : String();
   if (timestampHeader.isEmpty() || apiKey.isEmpty()) {
-    CommunicationUtils::sendError(server, 401, "missing authentication headers");
+    CommunicationUtils::sendError(request, 401, "missing authentication headers");
     return false;
   }
 
@@ -38,38 +42,32 @@ bool ConfigurationService::authenticate(WebServer &server) {
     difference = -difference;
   }
   if (difference > AUTH_WINDOW_SECONDS) {
-    CommunicationUtils::sendError(server, 401, "timestamp expired");
+    CommunicationUtils::sendError(request, 401, "timestamp expired");
     return false;
   }
 
   const String expected = CommunicationUtils::hmacSha256(
       sessionToken, sessionToken + ":" + timestampHeader);
   if (!CommunicationUtils::secureEquals(expected, apiKey)) {
-    CommunicationUtils::sendError(server, 401, "invalid api key");
+    CommunicationUtils::sendError(request, 401, "invalid api key");
     return false;
   }
   return true;
 }
 
-void ConfigurationService::handleRegister(WebServer &server) {
-  StaticJsonDocument<384> request;
-  if (!CommunicationUtils::parseJsonBody(server, request)) {
-    CommunicationUtils::sendError(server, 400, "invalid json");
-    return;
-  }
-
-  const char *pin = request["pin"] | "";
-  const char *nonce = request["nonce"] | "";
-  const char *proof = request["proof"] | "";
-  int64_t requestTime = request["timestamp"] | 0LL;
+void ConfigurationService::handleRegister(AsyncWebServerRequest *request, JsonVariantConst body) {
+  const char *pin = body["pin"] | "";
+  const char *nonce = body["nonce"] | "";
+  const char *proof = body["proof"] | "";
+  int64_t requestTime = body["timestamp"] | 0LL;
   if (strlen(pin) == 0 || strlen(nonce) < 16 || strlen(proof) == 0 || requestTime <= 0) {
-    CommunicationUtils::sendError(server, 400, "pin, nonce, proof and timestamp are required");
+    CommunicationUtils::sendError(request, 400, "pin, nonce, proof and timestamp are required");
     return;
   }
 
   if (strcmp(pin, DEVICE_PIN) != 0 ||
       !CommunicationUtils::secureEquals(CommunicationUtils::hmacSha256(DEVICE_PIN, nonce), proof)) {
-    CommunicationUtils::sendError(server, 401, "invalid registration proof");
+    CommunicationUtils::sendError(request, 401, "invalid registration proof");
     return;
   }
 
@@ -82,5 +80,5 @@ void ConfigurationService::handleRegister(WebServer &server) {
   response["registered"] = true;
   response["sessionToken"] = sessionToken;
   response["timestamp"] = requestTime;
-  CommunicationUtils::sendJson(server, 200, response);
+  CommunicationUtils::sendJson(request, 200, response);
 }

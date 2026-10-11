@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 class BatteryService {
  public:
@@ -27,4 +29,5 @@ class BatteryService {
   float voltageSumMv = 0.0f;
   uint16_t sampleCount = 0;
   uint32_t lastSampleMillis = 0;
+  mutable SemaphoreHandle_t stateMutex = nullptr;
 };
