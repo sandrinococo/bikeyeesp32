@@ -36,6 +36,7 @@ La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazio
 {
   "tipo": "ESP32-CAM",
   "version": "1.0",
+  "buildDateTime": "Oct 11 2026 14:27:42",
   "deviceName": "ESP32-CAM-AI",
   "serial": "1234567890",
   "running": true,

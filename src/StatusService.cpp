@@ -62,6 +62,7 @@ void StatusService::handle(WebServer &server) const
   sensor_t *sensor = esp_camera_sensor_get();
   document["tipo"] = DEVICE_TYPE;
   document["version"] = DEVICE_VERSION;
+  document["buildDateTime"] = BUILD_DATETIME;
   document["deviceName"] = DEVICE_NAME;
   document["serial"] = DEVICE_SERIAL;
   document["running"] = true;

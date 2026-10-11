@@ -178,7 +178,10 @@ Description: USB Serial Port (COM4)
 
 Recupera la COMx che ha PID=nnnn:pppp
 
+Pulisce l'ultima build localmente
+> pio run --target clean
 
+Build e carica su ESP32
 > pio run --target upload --upload-port COM4
 
 se COM4 e' la porta a cui e' connesso monitor serial deve essere chiuso.

@@ -72,25 +72,39 @@ void StreamingService::handle(WebServer &server, ConfigurationService &configura
   WiFiClient client = server.client();
   uint32_t frameCount = 0;
   const uint32_t streamStart = millis();
-  server.sendContent("HTTP/1.1 200 OK\r\n"
-                     "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
-                     "Cache-Control: no-cache\r\n\r\n");
+  
+  String head = "HTTP/1.1 200 OK\r\n"
+                "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
+                "Cache-Control: no-cache\r\n\r\n";
+  client.write((const uint8_t*)head.c_str(), head.length());
 
   while (client.connected()) {
     camera_fb_t *frame = esp_camera_fb_get();
     if (frame == nullptr) {
       break;
     }
-    client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", frame->len);
-    client.write(frame->buf, frame->len);
-    client.print("\r\n");
+
+    char partHeader[64];
+    int headerLen = snprintf(partHeader, sizeof(partHeader), "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", frame->len);
+
+    size_t writtenHeader = client.write((const uint8_t*)partHeader, headerLen);
+    size_t writtenData = client.write(frame->buf, frame->len);
+    size_t writtenFooter = client.write((const uint8_t*)"\r\n", 2);
+
     esp_camera_fb_return(frame);
+
+    // Se la scrittura fallisce, interrompi il ciclo per evitare crash o loop infiniti
+    if (writtenHeader == 0 || writtenData == 0 || writtenFooter == 0) {
+      break;
+    }
+
     ++frameCount;
     const uint32_t elapsed = millis() - streamStart;
     if (elapsed >= 1000) {
       fps = frameCount * 1000.0f / elapsed;
     }
-    delay(30);
+    
+    yield(); // Cede il controllo al sistema operativo per gestire il Wi-Fi
   }
   client.stop();
 }

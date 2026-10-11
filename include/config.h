@@ -7,6 +7,8 @@
 #define DEVICE_TYPE "ESP32-CAM"
 // Firmware version reported by GET /status.
 #define DEVICE_VERSION "1.0"
+// Build date and time, defined once in src/main.cpp.
+extern const char BUILD_DATETIME[];
 // Human-readable device name and access-point SSID.
 #define DEVICE_NAME "ESP32-CAM-AI"
 // Device serial number reported by GET /status.

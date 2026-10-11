@@ -267,6 +267,8 @@ class DeviceHttpTest(unittest.TestCase):
         self.assertEqual(status.get("tipo"), "ESP32-CAM")
         self.assertTrue(status.get("running"), "device reports running=false")
         self.assertIn("version", status)
+        self.assertIsInstance(status.get("buildDateTime"), str)
+        self.assertGreater(len(status["buildDateTime"]), 0)
         self.assertIn("serial", status)
         self.assertIsInstance(status.get("ram"), dict)
         self.assertIsInstance(status.get("wifi"), dict)

@@ -12,6 +12,8 @@
 #include "StreamingService.h"
 #include "config.h"
 
+const char BUILD_DATETIME[] = __DATE__ " " __TIME__;
+
 WebServer server(80);
 ConfigurationService configuration;
 LedService leds;
@@ -35,6 +37,7 @@ const char* getWiFiModeString(wifi_mode_t mode) {
 
 void setup() {
   Serial.begin(115200);
+  Serial.printf("Build date/time: %s\n", BUILD_DATETIME);
   configuration.begin();
 
   battery.begin();
