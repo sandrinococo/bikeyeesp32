@@ -139,10 +139,15 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
     if (elapsed >= 1000) {
       recordFps(state.frameCount * 1000.0f / elapsed);
     }
-    return written;
+
+  if (written > 0) {
+      return written;
+    }
+    // Il frame precedente era terminato al limite del chunk.
+    // Prosegui acquisendo il successivo senza restituire zero.
   }
   return written;
-}
+
 }
 
 void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationService &configuration) {
