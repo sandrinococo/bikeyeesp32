@@ -26,7 +26,7 @@ extern const char BUILD_DATETIME[];
 #define AP_INACTIVE_TIMEOUT_SECONDS 65535
 
 // Camera frame size used by the MJPEG stream.
-#define CAMERA_FRAME_SIZE FRAMESIZE_VGA
+#define CAMERA_FRAME_SIZE FRAMESIZE_QVGA
 // JPEG quality value; lower values produce better image quality.
 #define CAMERA_JPEG_QUALITY 12
 // Number of frame buffers allocated by the camera driver.

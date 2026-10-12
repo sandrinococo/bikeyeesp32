@@ -14,6 +14,7 @@ import http.client
 import json
 import os
 import secrets
+import socket
 import sys
 import time
 import unittest
@@ -21,6 +22,14 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+
+
+@dataclass(frozen=True)
+class StreamThroughput:
+    elapsed_seconds: float
+    total_bytes: int
+    frame_count: int
+    frames_by_second: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -280,6 +289,84 @@ class DeviceHttpClient:
         body_text = response_body.decode("utf-8", errors="replace")
         self._log_response(status_code, response_headers, body_text)
         return status_code, response_headers, response_body
+
+    def measure_stream_throughput(
+        self, api_key: str, timestamp: str, duration_seconds: int = 10
+    ) -> StreamThroughput:
+        """Measure received HTTP bytes and JPEG frames per second for at least 10 seconds."""
+        if duration_seconds < 10:
+            raise ValueError("stream throughput measurement must last at least 10 seconds")
+
+        connection = None
+        phase = "opening stream"
+        try:
+            connection, response = self.open_stream(api_key, timestamp)
+            if response.status != 200:
+                body = response.read(512)
+                raise AssertionError(
+                    f"GET /stream returned HTTP {response.status}: {body!r}"
+                )
+            content_type = response.headers.get("Content-Type", "")
+            if "multipart/x-mixed-replace" not in content_type:
+                raise AssertionError(f"unexpected stream Content-Type: {content_type!r}")
+            if connection.sock is not None:
+                connection.sock.settimeout(min(self.timeout_seconds, 1.0))
+
+            phase = "reading stream"
+            start_time = time.monotonic()
+            deadline = start_time + duration_seconds
+            total_bytes = 0
+            frame_count = 0
+            frames_by_second = [0] * duration_seconds
+            frame_buffer = bytearray()
+
+            while time.monotonic() < deadline:
+                try:
+                    chunk = response.read1(4096)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                frame_buffer.extend(chunk)
+
+                while True:
+                    start_index = frame_buffer.find(b"\xff\xd8")
+                    if start_index < 0:
+                        if len(frame_buffer) > 1:
+                            del frame_buffer[:-1]
+                        break
+                    if start_index:
+                        del frame_buffer[:start_index]
+                    end_index = frame_buffer.find(b"\xff\xd9", 2)
+                    if end_index < 0:
+                        break
+
+                    del frame_buffer[:end_index + 2]
+                    frame_count += 1
+                    second = int(time.monotonic() - start_time)
+                    if second < duration_seconds:
+                        frames_by_second[second] += 1
+
+            elapsed_seconds = time.monotonic() - start_time
+            if elapsed_seconds < duration_seconds:
+                raise AssertionError(
+                    f"stream ended after {elapsed_seconds:.2f}s; "
+                    f"expected at least {duration_seconds}s"
+                )
+            return StreamThroughput(
+                elapsed_seconds=elapsed_seconds,
+                total_bytes=total_bytes,
+                frame_count=frame_count,
+                frames_by_second=tuple(frames_by_second),
+            )
+        except (OSError, TimeoutError) as error:
+            raise AssertionError(
+                f"stream throughput measurement failed while {phase}: {error}"
+            ) from error
+        finally:
+            if connection is not None:
+                self._force_close_connection(connection)
 
     def stream_for_duration(self, api_key: str, timestamp: str, duration_seconds: int = 5) -> None:
             """Legge lo stream /stream per una durata specifica, loggando ogni secondo tipo, dimensione e unicità dei frame."""
@@ -678,6 +765,34 @@ class DeviceHttpTest(unittest.TestCase):
 
             # Avvia lo stream di test per 5 secondi
             self.client.stream_for_duration(api_key, timestamp, duration_seconds=5)
+
+    def test_59_stream_wifi_throughput_for_at_least_10_seconds(self) -> None:
+        """Misura frame JPEG/s e byte/s ricevuti via Wi-Fi per almeno 10 secondi."""
+        session_token = self.client.register()["sessionToken"]
+        timestamp = str(int(time.time()))
+        message = f"{session_token}:{timestamp}"
+        api_key = hmac.new(
+            session_token.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        measurement = self.client.measure_stream_throughput(
+            api_key, timestamp, duration_seconds=10
+        )
+        self.assertGreaterEqual(measurement.elapsed_seconds, 10.0)
+        self.assertGreater(measurement.total_bytes, 0, "stream delivered no data")
+        self.assertGreater(measurement.frame_count, 0, "stream delivered no JPEG frames")
+
+        self.client._print(
+            f"Throughput Wi-Fi: {measurement.frame_count} frame in "
+            f"{measurement.elapsed_seconds:.2f}s "
+            f"({measurement.frame_count / measurement.elapsed_seconds:.2f} frame/s), "
+            f"{measurement.total_bytes} byte HTTP "
+            f"({measurement.total_bytes / measurement.elapsed_seconds:.2f} byte/s)"
+        )
+        for second, frame_count in enumerate(measurement.frames_by_second):
+            self.client._print(f"  secondo {second + 1}: {frame_count} frame")
 
 
 
