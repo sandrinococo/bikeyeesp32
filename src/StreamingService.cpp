@@ -96,7 +96,7 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
     if (state.frame == nullptr) {
       state.frame = esp_camera_fb_get();
       if (state.frame == nullptr) {
-        return written;
+         return written > 0 ? written : RESPONSE_TRY_AGAIN;
       }
       state.headerLength = snprintf(
           state.header, sizeof(state.header),
