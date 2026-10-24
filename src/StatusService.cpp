@@ -12,46 +12,6 @@
 
 namespace
 {
-  const char *frameSizeName(framesize_t frameSize)
-  {
-    switch (frameSize)
-    {
-    case FRAMESIZE_QQVGA:
-      return "QQVGA";
-    case FRAMESIZE_QVGA:
-      return "QVGA";
-    case FRAMESIZE_VGA:
-      return "VGA";
-    case FRAMESIZE_SVGA:
-      return "SVGA";
-    case FRAMESIZE_XGA:
-      return "XGA";
-    case FRAMESIZE_SXGA:
-      return "SXGA";
-    case FRAMESIZE_UXGA:
-      return "UXGA";
-    default:
-      return "unknown";
-    }
-  }
-
-  const char *pixelFormatName(pixformat_t pixelFormat)
-  {
-    switch (pixelFormat)
-    {
-    case PIXFORMAT_JPEG:
-      return "JPEG";
-    case PIXFORMAT_RGB565:
-      return "RGB565";
-    case PIXFORMAT_YUV422:
-      return "YUV422";
-    case PIXFORMAT_GRAYSCALE:
-      return "GRAYSCALE";
-    default:
-      return "unknown";
-    }
-  }
-
   const char *resetReasonName(esp_reset_reason_t reason)
   {
     switch (reason)
@@ -125,7 +85,6 @@ void StatusService::recordStationDisconnected(uint8_t aid)
 void StatusService::handle(AsyncWebServerRequest *request) const
 {
   StaticJsonDocument<2048> document;
-  sensor_t *sensor = esp_camera_sensor_get();
   char lastErrorSnapshot[sizeof(lastError)];
   int lastErrorDetailSnapshot;
   uint32_t errorCountSnapshot;
@@ -145,7 +104,9 @@ void StatusService::handle(AsyncWebServerRequest *request) const
   document["system"]["uptimeSeconds"] = millis() / 1000;
   document["system"]["resetReason"] = resetReasonName(esp_reset_reason());
   document["system"]["resetReasonCode"] = static_cast<int>(esp_reset_reason());
-  const bool cameraReady = sensor != nullptr;
+  JsonObject cameraStatus = document.createNestedObject("camera");
+  streaming.writeStatus(cameraStatus);
+  const bool cameraReady = cameraStatus["ready"] | false;
   const bool healthy = accessPointStarted.load() && cameraReady && errorCountSnapshot == 0;
   document["health"] = healthy ? "ready" : "degraded";
   document["message"] = healthy ? "Device is running" : "One or more diagnostics require attention";
@@ -168,28 +129,6 @@ void StatusService::handle(AsyncWebServerRequest *request) const
   document["wifi"]["connectedStations"] = WiFi.softAPgetStationNum();
   document["wifi"]["stationConnects"] = stationConnects.load();
   document["wifi"]["stationDisconnects"] = stationDisconnects.load();
-  document["camera"]["ready"] = cameraReady;
-  document["camera"]["resolution"] = frameSizeName(CAMERA_FRAME_SIZE);
-  document["camera"]["format"] = pixelFormatName(PIXFORMAT_JPEG);
-  document["camera"]["fps"] = streaming.measuredFps();
-  document["camera"]["streamActive"] = streaming.isStreamActive();
-  document["camera"]["frameErrors"] = streaming.frameErrorCount();
-  document["camera"]["hasCapturedFrame"] = streaming.hasCapturedFrame();
-  if (streaming.hasCapturedFrame())
-  {
-    document["camera"]["lastFrameAgeMs"] =
-        static_cast<uint32_t>(millis() - streaming.lastFrameMillis());
-  }
-  if (sensor != nullptr)
-  {
-    JsonObject settings = document["camera"].createNestedObject("settings");
-    settings["brightness"] = sensor->status.brightness;
-    settings["contrast"] = sensor->status.contrast;
-    settings["saturation"] = sensor->status.saturation;
-    settings["autoExposure"] = sensor->status.aec;
-    settings["exposureLevel"] = sensor->status.ae_level;
-  }
-
   JsonObject batteryStatus = document.createNestedObject("battery");
   battery.writeStatus(batteryStatus);
   JsonObject ledStatus = document.createNestedObject("ledStatus");

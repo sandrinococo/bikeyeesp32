@@ -235,6 +235,68 @@ class DeviceHttpClient:
             raise AssertionError("/led response must be a JSON object")
         return status_code, response
 
+    def set_camera(
+        self,
+        api_key: str,
+        timestamp: str,
+        payload: dict[str, object],
+    ) -> tuple[int, dict]:
+        """Call authenticated POST /camera and return its JSON response."""
+        body = json.dumps(payload)
+        url = f"{self.base_url.rstrip('/')}/camera"
+        request = Request(
+            url,
+            data=body.encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-TIMESTAMP": timestamp,
+                "X-API-KEY": api_key,
+            },
+        )
+        self._log_request(request, body)
+        parsed_url = urlsplit(url)
+        connection = http.client.HTTPConnection(
+            parsed_url.hostname,
+            parsed_url.port or 80,
+            timeout=self.timeout_seconds,
+        )
+        try:
+            path = parsed_url.path or "/"
+            if parsed_url.query:
+                path += f"?{parsed_url.query}"
+            connection.request(
+                "POST",
+                path,
+                body=body,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-TIMESTAMP": timestamp,
+                    "X-API-KEY": api_key,
+                },
+            )
+            response = connection.getresponse()
+            status_code = response.status
+            response_headers = response.headers
+            response_body = response.read().decode("utf-8", errors="replace")
+        except (OSError, TimeoutError) as error:
+            raise AssertionError(f"device is unreachable at {url}: {error}") from error
+        finally:
+            self._force_close_connection(connection)
+
+        self._log_response(status_code, response_headers, response_body)
+        try:
+            response_payload = json.loads(response_body)
+        except json.JSONDecodeError as error:
+            raise AssertionError(
+                f"POST {url} returned invalid JSON: {response_body!r}"
+            ) from error
+        if not isinstance(response_payload, dict):
+            raise AssertionError("/camera response must be a JSON object")
+        return status_code, response_payload
+
     def open_stream(
         self, api_key: str, timestamp: str
     ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
@@ -532,7 +594,7 @@ class DeviceHttpTest(unittest.TestCase):
             new_token, new_api_key, new_timestamp
         )
         self.assertIn(new_status, (200, 409), f"new session rejected: {new_response}")
-
+    
     def test_04_led_authentication(self) -> None:
         """POST /led must reject bad HMAC and accept a valid session signature."""
         registration = self.client.register()
@@ -793,6 +855,106 @@ class DeviceHttpTest(unittest.TestCase):
         )
         for second, frame_count in enumerate(measurement.frames_by_second):
             self.client._print(f"  secondo {second + 1}: {frame_count} frame")
+
+    def test_60_camera_accepts_current_status_configuration(self) -> None:
+        """POST /camera must accept the current values reported by /status unchanged."""
+        session_token = self.client.register()["sessionToken"]
+        camera = self.client.get_status()["camera"]
+        payload = {
+            "resolution": camera["resolution"],
+            "framebuffers": camera["framebuffers"],
+            "jpegquality": camera["jpegquality"],
+        }
+        timestamp = str(int(time.time()))
+        message = f"{session_token}:{timestamp}"
+        api_key = hmac.new(
+            session_token.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        status_code, response = self.client.set_camera(api_key, timestamp, payload)
+
+        self.assertEqual(
+            status_code, 200, f"POST /camera returned HTTP {status_code}: {response}"
+        )
+        self.assertTrue(response.get("configured"))
+        self.assertFalse(response.get("changed"))
+        self.assertEqual(response.get("camera"), payload)
+        current_camera = self.client.get_status()["camera"]
+        for field, expected in payload.items():
+            self.assertEqual(current_camera.get(field), expected)
+    
+    def test_61_camera_reconfiguration_keeps_streaming(self) -> None:
+        """Changed camera quality and buffer count must still deliver a 10s stream."""
+        session_token = self.client.register()["sessionToken"]
+        original = self.client.get_status()["camera"]
+        original_config = {
+            "resolution": original["resolution"],
+            "framebuffers": original["framebuffers"],
+            "jpegquality": original["jpegquality"],
+        }
+        current_framebuffers = original_config["framebuffers"]
+        current_quality = original_config["jpegquality"]
+        self.assertIn(current_framebuffers, range(1, 5))
+        self.assertIn(current_quality, range(12, 21))
+
+        changed_config = {
+            "resolution": original_config["resolution"],
+            "framebuffers": (
+                current_framebuffers + 1 if current_framebuffers < 4 else 3
+            ),
+            "jpegquality": current_quality + 1 if current_quality < 20 else 19,
+        }
+
+        def configure(payload: dict[str, object]) -> tuple[int, dict]:
+            timestamp = str(int(time.time()))
+            message = f"{session_token}:{timestamp}"
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            return self.client.set_camera(api_key, timestamp, payload)
+
+        try:
+            status_code, response = configure(changed_config)
+            self.assertEqual(
+                status_code, 200, f"POST /camera returned HTTP {status_code}: {response}"
+            )
+            self.assertTrue(response.get("configured"))
+            self.assertTrue(response.get("changed"))
+            self.assertEqual(response.get("camera"), changed_config)
+
+            current_camera = self.client.get_status()["camera"]
+            for field, expected in changed_config.items():
+                self.assertEqual(current_camera.get(field), expected)
+
+            timestamp = str(int(time.time()))
+            message = f"{session_token}:{timestamp}"
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            measurement = self.client.measure_stream_throughput(
+                api_key, timestamp, duration_seconds=10
+            )
+            self.assertGreaterEqual(measurement.elapsed_seconds, 10.0)
+            self.assertGreater(measurement.total_bytes, 0, "stream delivered no data")
+            self.assertGreater(
+                measurement.frame_count, 0, "stream delivered no JPEG frames"
+            )
+        finally:
+            restore_status, restore_response = configure(original_config)
+            self.assertEqual(
+                restore_status,
+                200,
+                f"failed to restore camera configuration: {restore_response}",
+            )
+            restored_camera = self.client.get_status()["camera"]
+            for field, expected in original_config.items():
+                self.assertEqual(restored_camera.get(field), expected)
 
 
 

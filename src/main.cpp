@@ -140,6 +140,85 @@ void setup() {
   ledHandler->setMethod(HTTP_POST);
   ledHandler->setMaxContentLength(384);
   server.addHandler(ledHandler);
+  auto *cameraHandler = new AsyncCallbackJsonWebHandler(
+      "/camera", [](AsyncWebServerRequest *request, JsonVariant &body) {
+        if (!configuration.authenticate(request)) {
+          return;
+        }
+        if (!body.is<JsonObjectConst>()) {
+          CommunicationUtils::sendError(request, 400, "JSON object required");
+          return;
+        }
+
+        JsonObjectConst settings = body.as<JsonObjectConst>();
+        if (!settings["resolution"].is<const char *>() ||
+            !settings["framebuffers"].is<int>() ||
+            !settings["jpegquality"].is<int>()) {
+          CommunicationUtils::sendError(
+              request, 400, "resolution, framebuffers and jpegquality are required");
+          return;
+        }
+
+        const char *resolutionName = settings["resolution"];
+        framesize_t resolution;
+        if (strcmp(resolutionName, "QQVGA") == 0) {
+          resolution = FRAMESIZE_QQVGA;
+        } else if (strcmp(resolutionName, "QVGA") == 0) {
+          resolution = FRAMESIZE_QVGA;
+        } else if (strcmp(resolutionName, "VGA") == 0) {
+          resolution = FRAMESIZE_VGA;
+        } else if (strcmp(resolutionName, "SVGA") == 0) {
+          resolution = FRAMESIZE_SVGA;
+        } else if (strcmp(resolutionName, "XGA") == 0) {
+          resolution = FRAMESIZE_XGA;
+        } else if (strcmp(resolutionName, "SXGA") == 0) {
+          resolution = FRAMESIZE_SXGA;
+        } else if (strcmp(resolutionName, "UXGA") == 0) {
+          resolution = FRAMESIZE_UXGA;
+        } else {
+          CommunicationUtils::sendError(request, 400, "unsupported resolution");
+          return;
+        }
+
+        const int framebuffers = settings["framebuffers"];
+        const int jpegQuality = settings["jpegquality"];
+        if (framebuffers < 1 || framebuffers > 4 ||
+            jpegQuality < 12 || jpegQuality > 20) {
+          CommunicationUtils::sendError(
+              request, 400, "framebuffers must be 1..4 and jpegquality 12..20");
+          return;
+        }
+
+        const CameraConfigurationResult result = streaming.configureCamera(
+            resolution, static_cast<uint8_t>(framebuffers), jpegQuality);
+        if (result == CameraConfigurationResult::Unsupported) {
+          CommunicationUtils::sendError(
+              request, 409, "requested framebuffers require camera PSRAM");
+          return;
+        }
+        if (result == CameraConfigurationResult::Busy) {
+          CommunicationUtils::sendError(request, 409, "camera reconfiguration is in progress");
+          return;
+        }
+        if (result == CameraConfigurationResult::DeinitFailed ||
+            result == CameraConfigurationResult::InitFailed) {
+          status.recordError("camera_reconfigure_failed", static_cast<int>(result));
+          CommunicationUtils::sendError(request, 500, "camera reconfiguration failed");
+          return;
+        }
+
+        StaticJsonDocument<256> response;
+        response["configured"] = true;
+        response["changed"] = result == CameraConfigurationResult::Applied;
+        JsonObject camera = response.createNestedObject("camera");
+        camera["resolution"] = resolutionName;
+        camera["framebuffers"] = framebuffers;
+        camera["jpegquality"] = jpegQuality;
+        CommunicationUtils::sendJson(request, 200, response);
+      });
+  cameraHandler->setMethod(HTTP_POST);
+  cameraHandler->setMaxContentLength(192);
+  server.addHandler(cameraHandler);
   server.on("/stream", HTTP_GET, [](AsyncWebServerRequest *request) {
     streaming.handle(request, configuration);
   });

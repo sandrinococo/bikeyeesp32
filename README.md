@@ -49,7 +49,8 @@ La risposta contiene identita' del dispositivo, uptime e motivo dell'ultimo rese
     "minimumFreeBytes": 61400, "largestFreeBlockBytes": 32768},
   "wifi": {"mode": "accessPoint", "apStarted": true, "ip": "192.168.4.1",
     "connectedStations": 1, "stationConnects": 1, "stationDisconnects": 0},
-  "camera": {"ready": true, "resolution": "VGA", "format": "JPEG", "fps": 0,
+  "camera": {"ready": true, "resolution": "QVGA", "format": "JPEG",
+    "jpegquality": 12, "framebuffers": 2, "fps": 0,
     "streamActive": false, "frameErrors": 0, "hasCapturedFrame": false},
   "battery": {"present": false, "levelPercent": null, "voltageMv": 0,
     "charging": false, "full": false, "chargeDetection": "unavailable",
@@ -94,7 +95,7 @@ Conservare `sessionToken` nell'archivio sicuro dell'app.
 
 ### Autenticazione
 
-`POST /led` e `GET /stream` richiedono questi header:
+`POST /led`, `POST /camera` e `GET /stream` richiedono questi header:
 
 ```http
 X-TIMESTAMP: <timestamp Unix in secondi>
@@ -115,6 +116,22 @@ X-API-KEY: <hmac-hex>
 ```
 
 Il client deve leggere le parti delimitate da `frame` e decodificare il contenuto `image/jpeg` di ogni parte. Il valore `camera.fps` di `GET /status` viene aggiornato durante lo stream.
+
+### `POST /camera`
+
+Richiede autenticazione. Consente di modificare risoluzione, numero di framebuffer e qualita' JPEG senza riavviare la scheda.
+
+```http
+POST /camera HTTP/1.1
+Host: 192.168.4.1
+Content-Type: application/json
+X-TIMESTAMP: 1720000001
+X-API-KEY: <hmac-hex>
+
+{"resolution":"QVGA","framebuffers":3,"jpegquality":20}
+```
+
+`resolution` deve essere `QQVGA`, `QVGA`, `VGA`, `SVGA`, `XGA`, `SXGA` o `UXGA`; `framebuffers` e' un intero da 1 a 4; `jpegquality` e' un intero da 12 a 20. Se uno stream MJPEG e' attivo, l'invio dei frame viene sospeso durante la riconfigurazione e riprende sulla stessa connessione in caso di successo. Il frame eventualmente in corso viene scartato. Se la camera non supporta la configurazione richiesta o non riesce a inizializzarsi, il server risponde con un errore; quando possibile ripristina la configurazione precedente. Su schede senza PSRAM e' supportato un solo framebuffer. La configurazione non viene salvata in modo permanente e al riavvio tornano i valori predefiniti.
 
 ### `POST /led`
 
@@ -165,4 +182,5 @@ Le risposte di errore sono JSON e usano principalmente questi codici HTTP:
 - `400`: body JSON o parametri non validi;
 - `401`: dispositivo non registrato, header mancanti, timestamp scaduto o firma non valida;
 - `404`: endpoint inesistente;
-- `409`: striscia LED non configurata.
+- `409`: striscia LED non configurata, camera senza PSRAM per piu' framebuffer o riconfigurazione camera gia' in corso;
+- `500`: errore durante la riconfigurazione della camera.
