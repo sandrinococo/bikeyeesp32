@@ -38,13 +38,17 @@ const char* getWiFiModeString(wifi_mode_t mode) {
 
 void setup() {
   Serial.begin(115200);
+  status.begin();
   Serial.printf("Build date/time: %s\n", BUILD_DATETIME);
+  Serial.printf("Reset reason code: %d (text available from GET /status)\n",
+                static_cast<int>(esp_reset_reason()));
   configuration.begin();
 
   battery.begin();
   internalLed.begin(battery);
   leds.begin(configuration.storage());
   if (!streaming.beginCamera()) {
+    status.recordError("camera_init_failed");
     Serial.println("Camera initialization failed");
     while (true) {
       delay(1000);
@@ -53,7 +57,19 @@ void setup() {
 
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
-  WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL, false, AP_MAX_CONNECTIONS);
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
+      status.recordStationConnected(info.wifi_ap_staconnected.aid);
+    } else if (event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) {
+      status.recordStationDisconnected(info.wifi_ap_stadisconnected.aid);
+    }
+  });
+  const bool accessPointStarted =
+      WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL, false, AP_MAX_CONNECTIONS);
+  status.setAccessPointStarted(accessPointStarted);
+  if (!accessPointStarted) {
+    status.recordError("wifi_ap_start_failed");
+  }
   esp_err_t wifiPowerSaveResult = ESP_OK;
   bool wifiPowerSaveConfigured = false;
 #if WIFI_DISABLE_POWER_SAVE
@@ -62,6 +78,12 @@ void setup() {
 #endif
   esp_err_t wifiInactiveTimeResult =
       esp_wifi_set_inactive_time(WIFI_IF_AP, AP_INACTIVE_TIMEOUT_SECONDS);
+  if (wifiPowerSaveConfigured && wifiPowerSaveResult != ESP_OK) {
+    status.recordError("wifi_power_save_config_failed", wifiPowerSaveResult);
+  }
+  if (wifiInactiveTimeResult != ESP_OK) {
+    status.recordError("wifi_inactive_time_config_failed", wifiInactiveTimeResult);
+  }
   Serial.println(WiFi.softAPIP());
 
   Serial.println("\n=== CONFIGURAZIONE E SPECIFICHE ESP32 ===");

@@ -21,19 +21,19 @@ extern const char BUILD_DATETIME[];
 // Wi-Fi channel used by the access point.
 #define AP_CHANNEL 6
 // Maximum number of stations allowed to connect to the access point.
-#define AP_MAX_CONNECTIONS 1
+#define AP_MAX_CONNECTIONS 2
 // Maximum seconds a station may remain inactive before the AP disconnects it.
 #define AP_INACTIVE_TIMEOUT_SECONDS 65535
 
 // Camera frame size used by the MJPEG stream.
 #define CAMERA_FRAME_SIZE FRAMESIZE_QVGA
 // JPEG quality value; lower values produce better image quality.
-#define CAMERA_JPEG_QUALITY 12
+#define CAMERA_JPEG_QUALITY 20
 // Number of frame buffers allocated by the camera driver.
-#define CAMERA_FB_COUNT 2
+#define CAMERA_FB_COUNT 3
 
 // Maximum timestamp difference accepted for authenticated requests, in seconds.
-#define AUTH_WINDOW_SECONDS 5
+#define AUTH_WINDOW_SECONDS 60
 
 // Disable Wi-Fi power saving to improve AP and stream stability.
 #define WIFI_DISABLE_POWER_SAVE 1

@@ -30,7 +30,7 @@ GET /status HTTP/1.1
 Host: 192.168.4.1
 ```
 
-La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazioni e FPS della camera, batteria e stato LED. Esempio:
+La risposta contiene identita' del dispositivo, uptime e motivo dell'ultimo reset, stato di salute, diagnostica Wi-Fi e camera, memoria (inclusi minimo storico e blocco libero piu' grande), batteria e stato LED. `bootId` cambia a ogni avvio; `diagnostics.lastError` e' `null` se non sono stati registrati errori dall'avvio corrente. I collegamenti e scollegamenti Wi-Fi sono eventi normali e vengono conteggiati separatamente dagli errori.
 
 ```json
 {
@@ -40,8 +40,17 @@ La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazio
   "deviceName": "ESP32-CAM-AI",
   "serial": "1234567890",
   "running": true,
-  "wifi": {"mode": "accessPoint", "connectedStations": 1},
-  "camera": {"resolution": "VGA", "format": "JPEG", "fps": 0},
+  "system": {"bootId": 123456789, "uptimeSeconds": 3721,
+    "resetReason": "powerOn", "resetReasonCode": 1},
+  "health": "ready",
+  "message": "Device is running",
+  "diagnostics": {"errorCount": 0, "lastError": null},
+  "ram": {"freeBytes": 84200, "totalBytes": 327680,
+    "minimumFreeBytes": 61400, "largestFreeBlockBytes": 32768},
+  "wifi": {"mode": "accessPoint", "apStarted": true, "ip": "192.168.4.1",
+    "connectedStations": 1, "stationConnects": 1, "stationDisconnects": 0},
+  "camera": {"ready": true, "resolution": "VGA", "format": "JPEG", "fps": 0,
+    "streamActive": false, "frameErrors": 0, "hasCapturedFrame": false},
   "battery": {"present": false, "levelPercent": null, "voltageMv": 0,
     "charging": false, "full": false, "chargeDetection": "unavailable",
     "sampleIntervalMillis": 1000, "averageSamples": 10, "samplesCollected": 0},
@@ -53,6 +62,8 @@ La risposta contiene identita' del dispositivo, memoria, stato Wi-Fi, impostazio
 ```
 
 In modalita' access point, `wifi.signalDbm` non misura il segnale percepito dal telefono; l'app deve ricavarlo dalla propria connessione Wi-Fi.
+
+L'app dovrebbe interrogare `GET /status` a intervalli regolari (ad esempio ogni 5 secondi) con un timeout breve e aggiornare l'ora dell'ultima risposta valida. Se la richiesta fallisce, mostrare "dispositivo non raggiungibile" senza attribuire una causa non verificata; al ripristino, confrontare `system.bootId` per rilevare un riavvio. In caso di mancata risposta, la causa interna non e' disponibile finche' la scheda non torna raggiungibile. I dettagli di errori ed eventi sono inoltre scritti sul monitor seriale a 115200 baud.
 
 ### `POST /register`
 

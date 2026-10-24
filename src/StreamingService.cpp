@@ -67,6 +67,22 @@ float StreamingService::measuredFps() const {
   return fps.load();
 }
 
+bool StreamingService::isStreamActive() const {
+  return streamActive.load();
+}
+
+uint32_t StreamingService::frameErrorCount() const {
+  return frameErrors.load();
+}
+
+bool StreamingService::hasCapturedFrame() const {
+  return capturedFrame.load();
+}
+
+uint32_t StreamingService::lastFrameMillis() const {
+  return lastFrameAt.load();
+}
+
 namespace {
 struct StreamState {
   camera_fb_t *frame = nullptr;
@@ -90,14 +106,18 @@ struct StreamState {
 };
 
 size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &recordFps,
+                       const std::function<void()> &recordFrame,
+                       const std::function<void()> &recordFrameError,
                        uint8_t *buffer, size_t maxLength) {
   size_t written = 0;
   while (written < maxLength) {
     if (state.frame == nullptr) {
       state.frame = esp_camera_fb_get();
       if (state.frame == nullptr) {
-         return written > 0 ? written : RESPONSE_TRY_AGAIN;
+        recordFrameError();
+        return written > 0 ? written : RESPONSE_TRY_AGAIN;
       }
+      recordFrame();
       state.headerLength = snprintf(
           state.header, sizeof(state.header),
           "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
@@ -164,10 +184,22 @@ void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationServi
   auto state = std::make_shared<StreamState>();
   state->onDestroy = [this]() { streamActive.store(false); };
   std::function<void(float)> recordFps = [this](float value) { fps.store(value); };
+  std::function<void()> recordFrame = [this]() {
+    lastFrameAt.store(millis());
+    capturedFrame.store(true);
+  };
+  std::function<void()> recordFrameError = [this]() {
+    const uint32_t errors = frameErrors.fetch_add(1) + 1;
+    if (errors == 1 || errors % 100 == 0) {
+      Serial.printf("Camera frame capture failed (%lu total)\n",
+                    static_cast<unsigned long>(errors));
+    }
+  };
   AsyncWebServerResponse *response = request->beginChunkedResponse(
       "multipart/x-mixed-replace; boundary=frame",
-      [state, recordFps](uint8_t *buffer, size_t maxLength, size_t) {
-        return fillStreamChunk(*state, recordFps, buffer, maxLength);
+      [state, recordFps, recordFrame, recordFrameError](uint8_t *buffer, size_t maxLength, size_t) {
+        return fillStreamChunk(*state, recordFps, recordFrame, recordFrameError,
+                               buffer, maxLength);
       });
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);

@@ -73,7 +73,7 @@ Il test [tests/test_device_httpr2.py](tests/test_device_httpr2.py) usa solo la
 libreria standard Python e verifica che la scheda risponda a `GET /status`.
 Controlla anche il contratto JSON di batteria, LED interno e striscia LED.
 
-Con il computer collegato alla rete Wi-Fi della scheda eseguire:
+**Con il computer collegato alla rete Wi-Fi della scheda eseguire:**
 
 ```powershell
 .venv\Scripts\activate.bat
@@ -188,3 +188,15 @@ se COM4 e' la porta a cui e' connesso monitor serial deve essere chiuso.
 
 monitor
 > pio device monitor -p COM4
+
+# ATTENZIONE
+
+## Per la verifica del SW su scheda esp32 (tramite monitor) 
+
+- la scheda esp32 e' collegata a speedupboost
+- speedupboost collegato a batteria 
+- batteria collegata ad alimentatore USB
+- interuttore batteria acceso
+- la scheda esp32 e' collegata a scheda programmatrice senza 5V
+- scheda programmatrice collegata via USB a pc
+
