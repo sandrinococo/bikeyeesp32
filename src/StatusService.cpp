@@ -84,7 +84,7 @@ void StatusService::recordStationDisconnected(uint8_t aid)
 
 void StatusService::handle(AsyncWebServerRequest *request) const
 {
-  StaticJsonDocument<2048> document;
+  StaticJsonDocument<3072> document;
   char lastErrorSnapshot[sizeof(lastError)];
   int lastErrorDetailSnapshot;
   uint32_t errorCountSnapshot;

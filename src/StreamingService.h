@@ -62,8 +62,8 @@ private:
   std::atomic<float> fps{0.0f};
   std::atomic<float> captureFps{0.0f};
   std::atomic<uint32_t> captureDurationUs{0};
-  std::atomic<uint32_t> frameSendMs{0};
-  std::atomic<uint32_t> frameSendAgeMs{0};
+  std::atomic<uint32_t> frameChunkMs{0};
+  std::atomic<uint32_t> frameChunkAgeMs{0};
   std::atomic<bool> streamActive{false};
   std::atomic<uint32_t> frameErrors{0};
   std::atomic<bool> capturedFrame{false};

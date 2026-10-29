@@ -360,8 +360,8 @@ void StreamingService::writeStatus(JsonObject camera) const
   camera["fps"] = measuredFps();
   camera["captureFps"] = captureFps.load();
   camera["captureMs"] = captureDurationUs.load() / 1000.0f;
-  camera["frameSendMs"] = frameSendMs.load();
-  camera["frameSendAgeMs"] = frameSendAgeMs.load();
+  camera["frameChunkMs"] = frameChunkMs.load();
+  camera["frameChunkAgeMs"] = frameChunkAgeMs.load();
   camera["streamActive"] = isStreamActive();
   camera["frameErrors"] = frameErrorCount();
   camera["hasCapturedFrame"] = hasCapturedFrame();
@@ -458,7 +458,6 @@ size_t fillStreamChunk(StreamState &state,
     recordSent(millis() - state.sendStartedAt, millis() - state.frame->capturedAt);
     state.lastSequence = state.frame->sequence;
     state.frame.reset();
-    ++state.frameCount;
 
     if (written > 0)
     {
@@ -543,14 +542,14 @@ void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationServi
           }
           return frame; }, [this, state](uint32_t duration, uint32_t age)
                                {
-          frameSendMs.store(duration);
-          frameSendAgeMs.store(age);
+          frameChunkMs.store(duration);
+          frameChunkAgeMs.store(age);
+          ++state->frameCount;
           const uint32_t elapsed = millis() - state->startMillis;
           if (elapsed >= 1000) {
-            fps.store((state->frameCount + 1) * 1000.0f / elapsed);
+            fps.store(state->frameCount * 1000.0f / elapsed);
             state->frameCount = 0;
             state->startMillis = millis();
-            --state->frameCount;
           } }, buffer, maxLength);
       });
   if (response == nullptr)
