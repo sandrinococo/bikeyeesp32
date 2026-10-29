@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 #include "CommunicationUtils.h"
 #include "ConfigurationService.h"
@@ -27,8 +29,24 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-struct StreamState {
-  camera_fb_t *frame = nullptr;
+struct CapturedFrame
+{
+  uint8_t *buf = nullptr;
+  size_t len = 0;
+  size_t capacity = 0;
+  uint32_t capturedAt = 0;
+  uint32_t sequence = 0;
+
+  ~CapturedFrame() { free(buf); }
+};
+
+struct StreamState
+{
+  std::shared_ptr<CapturedFrame> frame;
+  AsyncClient *client = nullptr;
+  bool stopped = false;
+  uint32_t lastSequence = 0;
+  uint32_t sendStartedAt = 0;
   char header[96] = {};
   size_t headerLength = 0;
   size_t headerOffset = 0;
@@ -37,39 +55,157 @@ struct StreamState {
   uint32_t frameCount = 0;
   uint32_t startMillis = millis();
   std::function<void()> onDestroy;
-  SemaphoreHandle_t cameraMutex = nullptr;
 
-  ~StreamState() {
-    if (cameraMutex != nullptr && xSemaphoreTake(cameraMutex, portMAX_DELAY) == pdTRUE) {
-      if (frame != nullptr) {
-        esp_camera_fb_return(frame);
-        frame = nullptr;
-      }
-      xSemaphoreGive(cameraMutex);
-    }
-    if (onDestroy) {
+  ~StreamState()
+  {
+    if (onDestroy)
+    {
       onDestroy();
     }
   }
 };
 
-bool StreamingService::beginCamera() {
+bool StreamingService::beginCamera()
+{
   cameraMutex = xSemaphoreCreateMutex();
-  if (cameraMutex == nullptr) {
+  frameMutex = xSemaphoreCreateMutex();
+  if (cameraMutex == nullptr || frameMutex == nullptr)
+  {
     Serial.println("Camera mutex initialization failed");
     return false;
   }
   initializeCameraConfig();
-  if (xSemaphoreTake(cameraMutex, portMAX_DELAY) != pdTRUE) {
+  if (xSemaphoreTake(cameraMutex, portMAX_DELAY) != pdTRUE)
+  {
     return false;
   }
   const bool initialized = esp_camera_init(&cameraConfig) == ESP_OK;
   cameraReady.store(initialized);
+  if (initialized)
+  {
+    cacheSensorSettings();
+  }
   xSemaphoreGive(cameraMutex);
-  return initialized;
+  if (!initialized)
+  {
+    return false;
+  }
+  if (xTaskCreate([](void *context)
+                  { static_cast<StreamingService *>(context)->captureLoop(); }, "cameraCapture", 4096, this, 1, nullptr) != pdPASS)
+  {
+    cameraReady.store(false);
+    esp_camera_deinit();
+    return false;
+  }
+  return true;
 }
 
-void StreamingService::initializeCameraConfig() {
+void StreamingService::cacheSensorSettings()
+{
+  sensor_t *sensor = esp_camera_sensor_get();
+  hasSensorSettings = sensor != nullptr;
+  if (sensor != nullptr)
+  {
+    brightness = sensor->status.brightness;
+    contrast = sensor->status.contrast;
+    saturation = sensor->status.saturation;
+    autoExposure = sensor->status.aec;
+    exposureLevel = sensor->status.ae_level;
+  }
+}
+
+void StreamingService::captureLoop()
+{
+  std::shared_ptr<CapturedFrame> slots[3];
+  for (auto &slot : slots)
+  {
+    slot = std::make_shared<CapturedFrame>();
+  }
+  uint32_t sequence = 0;
+  uint32_t count = 0;
+  uint32_t startedAt = millis();
+  for (;;)
+  {
+    if (cameraReconfiguring.load() || !cameraReady.load() ||
+        xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(20)) != pdTRUE)
+    {
+      vTaskDelay(1);
+      continue;
+    }
+    if (cameraReconfiguring.load() || !cameraReady.load())
+    {
+      xSemaphoreGive(cameraMutex);
+      vTaskDelay(1);
+      continue;
+    }
+    const int64_t acquisitionStarted = esp_timer_get_time();
+    camera_fb_t *frame = esp_camera_fb_get();
+    captureDurationUs.store(static_cast<uint32_t>(esp_timer_get_time() - acquisitionStarted));
+    if (frame == nullptr)
+    {
+      frameErrors.fetch_add(1);
+      xSemaphoreGive(cameraMutex);
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;
+    }
+    ++count;
+    const uint32_t elapsed = millis() - startedAt;
+    if (elapsed >= 1000)
+    {
+      captureFps.store(count * 1000.0f / elapsed);
+      count = 0;
+      startedAt = millis();
+    }
+    std::shared_ptr<CapturedFrame> next;
+    for (auto &slot : slots)
+    {
+      if (slot.use_count() == 1)
+      {
+        next = slot;
+        break;
+      }
+    }
+    if (next && next->capacity < frame->len)
+    {
+      auto *storage = static_cast<uint8_t *>(heap_caps_realloc(
+          next->buf, frame->len,
+          MALLOC_CAP_8BIT | (psramFound() ? MALLOC_CAP_SPIRAM : MALLOC_CAP_INTERNAL)));
+      if (storage != nullptr)
+      {
+        next->buf = storage;
+        next->capacity = frame->len;
+      }
+    }
+    if (next && next->capacity >= frame->len)
+    {
+      memcpy(next->buf, frame->buf, frame->len);
+      next->len = frame->len;
+      const int64_t timestampUs = static_cast<int64_t>(frame->timestamp.tv_sec) * 1000000 +
+                                  frame->timestamp.tv_usec;
+      next->capturedAt = static_cast<uint32_t>(timestampUs / 1000);
+      next->sequence = ++sequence;
+    }
+    else
+    {
+      next.reset();
+      frameErrors.fetch_add(1);
+    }
+    esp_camera_fb_return(frame);
+    if (next)
+    {
+      xSemaphoreTake(frameMutex, portMAX_DELAY);
+      latestFrame = next;
+      lastFrameAt.store(next->capturedAt);
+      capturedFrame.store(true);
+      xSemaphoreGive(frameMutex);
+    }
+    xSemaphoreGive(cameraMutex);
+    vTaskDelay(1);
+  }
+}
+
+void StreamingService::initializeCameraConfig()
+{
   cameraConfig = {};
   cameraConfig.ledc_channel = LEDC_CHANNEL_0;
   cameraConfig.ledc_timer = LEDC_TIMER_0;
@@ -96,73 +232,72 @@ void StreamingService::initializeCameraConfig() {
   cameraConfig.fb_count = psramFound() ? CAMERA_FB_COUNT : 1;
   cameraConfig.grab_mode = CAMERA_GRAB_LATEST;
 
-  if (psramFound()) {
+  if (psramFound())
+  {
     cameraConfig.fb_location = CAMERA_FB_IN_PSRAM;
-  } else {
+  }
+  else
+  {
     cameraConfig.fb_count = 1;
     cameraConfig.fb_location = CAMERA_FB_IN_DRAM;
   }
 }
 
-float StreamingService::measuredFps() const {
+float StreamingService::measuredFps() const
+{
   return fps.load();
 }
 
 CameraConfigurationResult StreamingService::configureCamera(
-    framesize_t resolution, uint8_t framebuffers, int jpegQuality) {
-  if (!psramFound() && framebuffers > 1) {
+    framesize_t resolution, uint8_t framebuffers, int jpegQuality)
+{
+  if (!psramFound() && framebuffers > 1)
+  {
     return CameraConfigurationResult::Unsupported;
   }
 
   bool expected = false;
-  if (!cameraReconfiguring.compare_exchange_strong(expected, true)) {
+  if (!cameraReconfiguring.compare_exchange_strong(expected, true))
+  {
     return CameraConfigurationResult::Busy;
   }
 
-  std::shared_ptr<StreamState> activeStream;
-  while (true) {
-    if (xSemaphoreTake(cameraMutex, portMAX_DELAY) != pdTRUE) {
-      cameraReconfiguring.store(false);
-      return CameraConfigurationResult::DeinitFailed;
-    }
-    activeStream = activeStreamState.lock();
-    if (activeStream || !streamActive.load()) {
-      break;
-    }
-    xSemaphoreGive(cameraMutex);
-    vTaskDelay(1);
+  if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(50)) != pdTRUE)
+  {
+    cameraReconfiguring.store(false);
+    return CameraConfigurationResult::Busy;
   }
 
   if (cameraConfig.frame_size == resolution &&
       cameraConfig.fb_count == framebuffers &&
-      cameraConfig.jpeg_quality == jpegQuality) {
+      cameraConfig.jpeg_quality == jpegQuality)
+  {
     xSemaphoreGive(cameraMutex);
     cameraReconfiguring.store(false);
     return CameraConfigurationResult::Unchanged;
   }
 
-  if (activeStream && activeStream->frame != nullptr) {
-    esp_camera_fb_return(activeStream->frame);
-    activeStream->frame = nullptr;
-    activeStream->headerLength = 0;
-    activeStream->headerOffset = 0;
-    activeStream->frameOffset = 0;
-    activeStream->footerOffset = 0;
-  }
-
   const camera_config_t previousConfig = cameraConfig;
-  if (esp_camera_deinit() != ESP_OK) {
+  if (esp_camera_deinit() != ESP_OK)
+  {
     xSemaphoreGive(cameraMutex);
     cameraReconfiguring.store(false);
     return CameraConfigurationResult::DeinitFailed;
   }
   cameraReady.store(false);
+  xSemaphoreTake(frameMutex, portMAX_DELAY);
+  latestFrame.reset();
+  xSemaphoreGive(frameMutex);
+  capturedFrame.store(false);
+  captureFps.store(0.0f);
 
   cameraConfig.frame_size = resolution;
   cameraConfig.fb_count = framebuffers;
   cameraConfig.jpeg_quality = jpegQuality;
-  if (esp_camera_init(&cameraConfig) == ESP_OK) {
+  if (esp_camera_init(&cameraConfig) == ESP_OK)
+  {
     cameraReady.store(true);
+    cacheSensorSettings();
     fps.store(0.0f);
     capturedFrame.store(false);
     lastFrameAt.store(0);
@@ -174,68 +309,69 @@ CameraConfigurationResult StreamingService::configureCamera(
   Serial.println("Camera reinitialization failed; restoring previous configuration");
   esp_camera_deinit();
   cameraConfig = previousConfig;
-  if (esp_camera_init(&cameraConfig) == ESP_OK) {
+  if (esp_camera_init(&cameraConfig) == ESP_OK)
+  {
     cameraReady.store(true);
+    cacheSensorSettings();
   }
   xSemaphoreGive(cameraMutex);
   cameraReconfiguring.store(false);
   return CameraConfigurationResult::InitFailed;
 }
 
-void StreamingService::writeStatus(JsonObject camera) const {
-  framesize_t resolution = CAMERA_FRAME_SIZE;
-  int jpegQuality = CAMERA_JPEG_QUALITY;
-  int framebuffers = 1;
-  bool ready = false;
-  bool hasSensorSettings = false;
-  int brightness = 0;
-  int contrast = 0;
-  int saturation = 0;
-  int autoExposure = 0;
-  int exposureLevel = 0;
-  if (xSemaphoreTake(cameraMutex, portMAX_DELAY) == pdTRUE) {
-    ready = cameraReady.load();
-    resolution = cameraConfig.frame_size;
-    jpegQuality = cameraConfig.jpeg_quality;
-    framebuffers = cameraConfig.fb_count;
-    sensor_t *sensor = ready ? esp_camera_sensor_get() : nullptr;
-    if (sensor != nullptr) {
-      hasSensorSettings = true;
-      brightness = sensor->status.brightness;
-      contrast = sensor->status.contrast;
-      saturation = sensor->status.saturation;
-      autoExposure = sensor->status.aec;
-      exposureLevel = sensor->status.ae_level;
-    }
-    xSemaphoreGive(cameraMutex);
-  }
+void StreamingService::writeStatus(JsonObject camera) const
+{
+  const framesize_t resolution = cameraConfig.frame_size;
 
   const char *resolutionName = "unknown";
-  switch (resolution) {
-    case FRAMESIZE_QQVGA: resolutionName = "QQVGA"; break;
-    case FRAMESIZE_QVGA: resolutionName = "QVGA"; break;
-    case FRAMESIZE_VGA: resolutionName = "VGA"; break;
-    case FRAMESIZE_SVGA: resolutionName = "SVGA"; break;
-    case FRAMESIZE_XGA: resolutionName = "XGA"; break;
-    case FRAMESIZE_SXGA: resolutionName = "SXGA"; break;
-    case FRAMESIZE_UXGA: resolutionName = "UXGA"; break;
-    default: break;
+  switch (resolution)
+  {
+  case FRAMESIZE_QQVGA:
+    resolutionName = "QQVGA";
+    break;
+  case FRAMESIZE_QVGA:
+    resolutionName = "QVGA";
+    break;
+  case FRAMESIZE_VGA:
+    resolutionName = "VGA";
+    break;
+  case FRAMESIZE_SVGA:
+    resolutionName = "SVGA";
+    break;
+  case FRAMESIZE_XGA:
+    resolutionName = "XGA";
+    break;
+  case FRAMESIZE_SXGA:
+    resolutionName = "SXGA";
+    break;
+  case FRAMESIZE_UXGA:
+    resolutionName = "UXGA";
+    break;
+  default:
+    break;
   }
 
-  camera["ready"] = ready;
+  camera["ready"] = cameraReady.load();
+  camera["reconfiguring"] = cameraReconfiguring.load();
   camera["resolution"] = resolutionName;
   camera["format"] = "JPEG";
-  camera["jpegquality"] = jpegQuality;
-  camera["framebuffers"] = framebuffers;
+  camera["jpegquality"] = cameraConfig.jpeg_quality;
+  camera["framebuffers"] = cameraConfig.fb_count;
   camera["fps"] = measuredFps();
+  camera["captureFps"] = captureFps.load();
+  camera["captureMs"] = captureDurationUs.load() / 1000.0f;
+  camera["frameSendMs"] = frameSendMs.load();
+  camera["frameSendAgeMs"] = frameSendAgeMs.load();
   camera["streamActive"] = isStreamActive();
   camera["frameErrors"] = frameErrorCount();
   camera["hasCapturedFrame"] = hasCapturedFrame();
-  if (hasCapturedFrame()) {
+  if (hasCapturedFrame())
+  {
     camera["lastFrameAgeMs"] =
         static_cast<uint32_t>(millis() - lastFrameMillis());
   }
-  if (hasSensorSettings) {
+  if (hasSensorSettings)
+  {
     JsonObject settings = camera.createNestedObject("settings");
     settings["brightness"] = brightness;
     settings["contrast"] = contrast;
@@ -245,35 +381,43 @@ void StreamingService::writeStatus(JsonObject camera) const {
   }
 }
 
-bool StreamingService::isStreamActive() const {
+bool StreamingService::isStreamActive() const
+{
   return streamActive.load();
 }
 
-uint32_t StreamingService::frameErrorCount() const {
+uint32_t StreamingService::frameErrorCount() const
+{
   return frameErrors.load();
 }
 
-bool StreamingService::hasCapturedFrame() const {
+bool StreamingService::hasCapturedFrame() const
+{
   return capturedFrame.load();
 }
 
-uint32_t StreamingService::lastFrameMillis() const {
+uint32_t StreamingService::lastFrameMillis() const
+{
   return lastFrameAt.load();
 }
 
-size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &recordFps,
-                       const std::function<void()> &recordFrame,
-                       const std::function<void()> &recordFrameError,
-                       uint8_t *buffer, size_t maxLength) {
+size_t fillStreamChunk(StreamState &state,
+                       const std::function<std::shared_ptr<CapturedFrame>()> &getLatest,
+                       const std::function<void(uint32_t, uint32_t)> &recordSent,
+                       uint8_t *buffer, size_t maxLength)
+{
   size_t written = 0;
-  while (written < maxLength) {
-    if (state.frame == nullptr) {
-      state.frame = esp_camera_fb_get();
-      if (state.frame == nullptr) {
-        recordFrameError();
+  while (written < maxLength)
+  {
+    if (state.frame == nullptr)
+    {
+      state.frame = getLatest();
+      if (!state.frame || state.frame->sequence == state.lastSequence)
+      {
+        state.frame.reset();
         return written > 0 ? written : RESPONSE_TRY_AGAIN;
       }
-      recordFrame();
+      state.sendStartedAt = millis();
       state.headerLength = snprintf(
           state.header, sizeof(state.header),
           "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
@@ -283,7 +427,8 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
       state.footerOffset = 0;
     }
 
-    if (state.headerOffset < state.headerLength) {
+    if (state.headerOffset < state.headerLength)
+    {
       const size_t count = std::min(maxLength - written, state.headerLength - state.headerOffset);
       memcpy(buffer + written, state.header + state.headerOffset, count);
       state.headerOffset += count;
@@ -291,7 +436,8 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
       continue;
     }
 
-    if (state.frameOffset < state.frame->len) {
+    if (state.frameOffset < state.frame->len)
+    {
       const size_t count = std::min(maxLength - written, state.frame->len - state.frameOffset);
       memcpy(buffer + written, state.frame->buf + state.frameOffset, count);
       state.frameOffset += count;
@@ -300,7 +446,8 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
     }
 
     static const uint8_t footer[] = "\r\n";
-    if (state.footerOffset < sizeof(footer) - 1) {
+    if (state.footerOffset < sizeof(footer) - 1)
+    {
       const size_t count = std::min(maxLength - written, sizeof(footer) - 1 - state.footerOffset);
       memcpy(buffer + written, footer + state.footerOffset, count);
       state.footerOffset += count;
@@ -308,91 +455,106 @@ size_t fillStreamChunk(StreamState &state, const std::function<void(float)> &rec
       continue;
     }
 
-    esp_camera_fb_return(state.frame);
-    state.frame = nullptr;
+    recordSent(millis() - state.sendStartedAt, millis() - state.frame->capturedAt);
+    state.lastSequence = state.frame->sequence;
+    state.frame.reset();
     ++state.frameCount;
-    const uint32_t elapsed = millis() - state.startMillis;
-    if (elapsed >= 1000) {
-      recordFps(state.frameCount * 1000.0f / elapsed);
-    }
 
-    if (written > 0) {
+    if (written > 0)
+    {
       return written;
     }
-    // Il frame precedente era terminato al limite del chunk.
-    // Prosegui acquisendo il successivo senza restituire zero.
   }
   return written;
-
 }
 
-void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationService &configuration) {
-  if (!configuration.authenticate(request)) {
+void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationService &configuration)
+{
+  if (!configuration.authenticate(request))
+  {
     return;
   }
-  if (cameraReconfiguring.load()) {
+  if (cameraReconfiguring.load())
+  {
     CommunicationUtils::sendError(request, 503, "camera reconfiguration is in progress");
     return;
   }
-  bool expected = false;
-  if (!streamActive.compare_exchange_strong(expected, true)) {
-    CommunicationUtils::sendError(request, 503, "stream is already active");
+  if (!cameraReady.load())
+  {
+    CommunicationUtils::sendError(request, 503, "camera is not ready");
     return;
   }
 
+  auto previous = activeStreamState.lock();
+  if (previous)
+  {
+    previous->stopped = true;
+    previous->frame.reset();
+    if (previous->client != nullptr)
+    {
+      previous->client->close(true);
+    }
+  }
   auto state = std::make_shared<StreamState>();
-  state->cameraMutex = cameraMutex;
-  state->onDestroy = [this]() { streamActive.store(false); };
-  if (xSemaphoreTake(cameraMutex, portMAX_DELAY) != pdTRUE) {
-    streamActive.store(false);
-    CommunicationUtils::sendError(request, 500, "camera lock failed");
-    return;
-  }
-  if (cameraReconfiguring.load() || !cameraReady.load()) {
-    xSemaphoreGive(cameraMutex);
-    streamActive.store(false);
-    CommunicationUtils::sendError(request, 503,
-                                   cameraReady.load() ? "camera reconfiguration is in progress"
-                                                      : "camera is not ready");
-    return;
-  }
+  state->client = request->client();
   activeStreamState = state;
-  xSemaphoreGive(cameraMutex);
-
-  std::function<void(float)> recordFps = [this](float value) { fps.store(value); };
-  std::function<void()> recordFrame = [this]() {
-    lastFrameAt.store(millis());
-    capturedFrame.store(true);
-  };
-  std::function<void()> recordFrameError = [this]() {
-    const uint32_t errors = frameErrors.fetch_add(1) + 1;
-    if (errors == 1 || errors % 100 == 0) {
-      Serial.printf("Camera frame capture failed (%lu total)\n",
-                    static_cast<unsigned long>(errors));
+  streamActive.store(true);
+  fps.store(0.0f);
+  std::weak_ptr<StreamState> weakState = state;
+  state->onDestroy = [this, weakState]()
+  {
+    if (!activeStreamState.owner_before(weakState) &&
+        !weakState.owner_before(activeStreamState))
+    {
+      streamActive.store(false);
+      fps.store(0.0f);
     }
   };
+  request->onDisconnect([this, weakState]()
+                        {
+    if (auto disconnected = weakState.lock()) {
+      disconnected->stopped = true;
+      disconnected->client = nullptr;
+      disconnected->frame.reset();
+      if (activeStreamState.lock() == disconnected) {
+        activeStreamState.reset();
+        streamActive.store(false);
+        fps.store(0.0f);
+      }
+    } });
   AsyncWebServerResponse *response = request->beginChunkedResponse(
       "multipart/x-mixed-replace; boundary=frame",
-      [this, state, recordFps, recordFrame, recordFrameError](uint8_t *buffer, size_t maxLength, size_t) {
-        if (cameraReconfiguring.load()) {
-          return static_cast<size_t>(RESPONSE_TRY_AGAIN);
-        }
-        if (xSemaphoreTake(state->cameraMutex, portMAX_DELAY) != pdTRUE) {
+      [this, state](uint8_t *buffer, size_t maxLength, size_t)
+      {
+        if (state->stopped)
+        {
           return static_cast<size_t>(0);
         }
-        size_t result;
-        if (cameraReconfiguring.load()) {
-          result = RESPONSE_TRY_AGAIN;
-        } else if (!cameraReady.load()) {
-          result = 0;
-        } else {
-          result = fillStreamChunk(*state, recordFps, recordFrame, recordFrameError,
-                                   buffer, maxLength);
+        if (!cameraReady.load() && !cameraReconfiguring.load() && !state->frame)
+        {
+          return static_cast<size_t>(0);
         }
-        xSemaphoreGive(state->cameraMutex);
-        return result;
+        return fillStreamChunk(*state, [this]()
+                               {
+          std::shared_ptr<CapturedFrame> frame;
+          if (xSemaphoreTake(frameMutex, 0) == pdTRUE) {
+            frame = latestFrame;
+            xSemaphoreGive(frameMutex);
+          }
+          return frame; }, [this, state](uint32_t duration, uint32_t age)
+                               {
+          frameSendMs.store(duration);
+          frameSendAgeMs.store(age);
+          const uint32_t elapsed = millis() - state->startMillis;
+          if (elapsed >= 1000) {
+            fps.store((state->frameCount + 1) * 1000.0f / elapsed);
+            state->frameCount = 0;
+            state->startMillis = millis();
+            --state->frameCount;
+          } }, buffer, maxLength);
       });
-  if (response == nullptr) {
+  if (response == nullptr)
+  {
     CommunicationUtils::sendError(request, 500, "could not create camera stream");
     return;
   }
