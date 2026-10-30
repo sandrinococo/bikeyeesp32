@@ -372,7 +372,9 @@ class DeviceHttpClient:
             if "multipart/x-mixed-replace" not in content_type:
                 raise AssertionError(f"unexpected stream Content-Type: {content_type!r}")
             if connection.sock is not None:
-                connection.sock.settimeout(min(self.timeout_seconds, 1.0))
+                connection.sock.settimeout(
+                    max(self.timeout_seconds, duration_seconds + self.timeout_seconds)
+                )
 
             phase = "reading stream"
             start_time = time.monotonic()
@@ -383,10 +385,7 @@ class DeviceHttpClient:
             frame_buffer = bytearray()
 
             while time.monotonic() < deadline:
-                try:
-                    chunk = response.read1(4096)
-                except socket.timeout:
-                    continue
+                chunk = response.read1(4096)
                 if not chunk:
                     break
                 total_bytes += len(chunk)
@@ -431,95 +430,78 @@ class DeviceHttpClient:
                 self._force_close_connection(connection)
 
     def stream_for_duration(self, api_key: str, timestamp: str, duration_seconds: int = 5) -> None:
-            """Legge lo stream /stream per una durata specifica, loggando ogni secondo tipo, dimensione e unicità dei frame."""
-            url = f"{self.base_url if 'base_url' in locals() else self.base_url.rstrip('/')}/stream"
-            parsed_url = urlsplit(url)
-            connection = http.client.HTTPConnection(
-                parsed_url.hostname,
-                parsed_url.port or 80,
-                timeout=self.timeout_seconds,
-            )
-            request = Request(
-                url,
-                method="GET",
-                headers={
-                    "Accept": "multipart/x-mixed-replace",
-                    "X-TIMESTAMP": timestamp,
-                    "X-API-KEY": api_key,
-                },
-            )
-            self._log_request(request)
-            try:
-                path = parsed_url.path or "/"
-                if parsed_url.query:
-                    path += f"?{parsed_url.query}"
-                connection.request(
-                    "GET",
-                    path,
-                    headers={
-                        "Accept": "multipart/x-mixed-replace",
-                        "X-TIMESTAMP": timestamp,
-                        "X-API-KEY": api_key,
-                    },
+        """Read the MJPEG stream for a fixed duration and log received frames."""
+        connection, response = self.open_stream(api_key, timestamp)
+        try:
+            if response.status != 200:
+                body = response.read(512)
+                raise AssertionError(
+                    f"GET /stream returned HTTP {response.status}: {body!r}"
                 )
-                response = connection.getresponse()
-                if response.status != 200:
-                    self._print(f"Stream fallito con HTTP status {response.status}")
-                    return
 
-                content_type = response.headers.get("Content-Type", " sconosciuto")
-                self._print(f"Stream connesso. Content-Type: {content_type}")
+            content_type = response.headers.get("Content-Type", "sconosciuto")
+            self._print(f"Stream connesso. Content-Type: {content_type}")
+            start_time = time.monotonic()
+            deadline = start_time + duration_seconds
+            last_log_time = start_time
+            buffer = b""
+            frame_count = 0
+            previous_hash = None
 
-                start_time = time.time()
-                last_log_time = start_time
-                buffer = b""
-                frame_count = 0
-                previous_hash = None
+            if connection.sock is not None:
+                connection.sock.settimeout(
+                    max(self.timeout_seconds, duration_seconds + self.timeout_seconds)
+                )
 
-                while time.time() - start_time < duration_seconds:
-                    chunk = response.fp.read(1024)
-                    if not chunk:
+            while time.monotonic() < deadline:
+                chunk = response.read1(1024)
+                if not chunk:
+                    break
+                buffer += chunk
+
+                while True:
+                    start_idx = buffer.find(b"\xff\xd8")
+                    if start_idx < 0:
+                        if len(buffer) > 1:
+                            buffer = buffer[-1:]
                         break
-                    buffer += chunk
+                    if start_idx:
+                        buffer = buffer[start_idx:]
+                    end_idx = buffer.find(b"\xff\xd9", 2)
+                    if end_idx < 0:
+                        break
 
-                    # Estrazione dei singoli frame JPEG dai marker SOI (0xFFD8) e EOI (0xFFD9)
-                    while True:
-                        start_idx = buffer.find(b"\xff\xd8")
-                        end_idx = buffer.find(b"\xff\xd9")
+                    frame_data = buffer[:end_idx + 2]
+                    buffer = buffer[end_idx + 2:]
+                    frame_count += 1
+                    frame_hash = hashlib.md5(frame_data).hexdigest()
+                    is_different = frame_hash != previous_hash
+                    previous_hash = frame_hash
 
-                        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                            frame_data = buffer[start_idx:end_idx + 2]
-                            buffer = buffer[end_idx + 2:] # Rimuove il frame processato dal buffer
-                            
-                            frame_count += 1
-                            frame_size = len(frame_data)
-                            
-                            # Generazione di un hash rapido per verificare se il contenuto del frame è diverso
-                            frame_hash = hashlib.md5(frame_data).hexdigest()
-                            is_different = (frame_hash != previous_hash)
-                            previous_hash = frame_hash
+                    current_time = time.monotonic()
+                    if current_time - last_log_time >= 1.0 or frame_count == 1:
+                        elapsed = int(current_time - start_time)
+                        self._print(
+                            f"[STREAM LOG - {elapsed}s] "
+                            f"Tipo: image/jpeg | Dimensione: {len(frame_data)} bytes | "
+                            f"Frame differente dal precedente: {is_different} "
+                            f"(Hash: {frame_hash[:8]})"
+                        )
+                        last_log_time = current_time
 
-                            current_time = time.time()
-                            # Logga ogni secondo o al primo frame utile
-                            if current_time - last_log_time >= 1.0 or frame_count == 1:
-                                elapsed = int(current_time - start_time)
-                                self._print(
-                                    f"[STREAM LOG - {elapsed}s] "
-                                    f"Tipo: image/jpeg | "
-                                    f"Dimensione: {frame_size} bytes | "
-                                    f"Frame differente dal precedente: {is_different} "
-                                    f"(Hash: {frame_hash[:8]})"
-                                )
-                                last_log_time = current_time
-                        else:
-                            break
-
-                self._print(f"Stream completato. Ricevuti {frame_count} frame totali in {duration_seconds} secondi.")
-
-            except (OSError, TimeoutError) as error:
-                self._print(f"Errore durante lo stream: {error}")
-            finally:
-                self._force_close_connection(connection)
+            elapsed = time.monotonic() - start_time
+            if elapsed < duration_seconds:
+                raise AssertionError(
+                    f"stream ended after {elapsed:.2f}s; expected {duration_seconds}s"
+                )
+            self._print(
+                f"Stream completato. Ricevuti {frame_count} frame totali "
+                f"in {elapsed:.2f} secondi."
+            )
+        except (OSError, TimeoutError) as error:
+            raise AssertionError(f"stream logging failed: {error}") from error
+        finally:
+            self._force_close_connection(connection)
 
 class DeviceHttpTest(unittest.TestCase):
     """Smoke tests proving that the ESP32-CAM service exists and is healthy."""
@@ -695,7 +677,7 @@ class DeviceHttpTest(unittest.TestCase):
         self.assertIn(b"--frame", first_bytes)
 
     def test_58_stream_is_concurrent_with_status(self) -> None:
-        """An open MJPEG stream must not block status or allow another stream."""
+        """An open MJPEG stream must not block status or allow a second stream."""
         session_token = self.client.register()["sessionToken"]
 
         def signed_headers() -> tuple[str, str]:
@@ -732,12 +714,12 @@ class DeviceHttpTest(unittest.TestCase):
             second_connection, second_response = self.client.open_stream(
                 second_api_key, second_timestamp
             )
-            second_body = second_response.read()
             self.assertEqual(
                 second_response.status,
                 503,
-                f"second stream returned HTTP {second_response.status}: {second_body!r}",
+                f"second stream returned HTTP {second_response.status}",
             )
+            second_body = second_response.read()
             try:
                 error = json.loads(second_body)
             except json.JSONDecodeError as error:
@@ -813,20 +795,25 @@ class DeviceHttpTest(unittest.TestCase):
         self.assertIn(internal_led.get("state"), ("off", "lowBattery", "charging", "full"))
 
     def test_57_stream_logging_for_5_seconds(self) -> None:
-            """Esegue lo stream per 5 secondi verificando dimensioni, tipo e unicità dei frame."""
-            registration = self.client.register()
-            session_token = registration["sessionToken"]
-            
-            timestamp = str(int(time.time()))
-            message = f"{session_token}:{timestamp}"
-            api_key = hmac.new(
-                session_token.encode("utf-8"),
-                message.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
+        """Check that the stream closes and is released after five seconds."""
+        session_token = self.client.register()["sessionToken"]
+        timestamp = str(int(time.time()))
+        message = f"{session_token}:{timestamp}"
+        api_key = hmac.new(
+            session_token.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
-            # Avvia lo stream di test per 5 secondi
-            self.client.stream_for_duration(api_key, timestamp, duration_seconds=5)
+        self.client.stream_for_duration(api_key, timestamp, duration_seconds=5)
+        release_deadline = time.monotonic() + self.client.timeout_seconds
+        while True:
+            camera = self.client.get_status()["camera"]
+            if not camera["streamActive"]:
+                break
+            if time.monotonic() >= release_deadline:
+                self.fail("camera stream remained active after test_57 closed it")
+            time.sleep(0.1)
 
     def test_59_stream_wifi_throughput_for_at_least_10_seconds(self) -> None:
         """Misura frame JPEG/s e byte/s ricevuti via Wi-Fi per almeno 10 secondi."""
