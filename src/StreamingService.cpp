@@ -139,7 +139,8 @@ void StreamingService::captureLoop()
       continue;
     }
     const int64_t acquisitionStarted = esp_timer_get_time();
-    camera_fb_t *frame = esp_camera_fb_get();
+    std::unique_ptr<camera_fb_t, decltype(&esp_camera_fb_return)> frame(
+        esp_camera_fb_get(), &esp_camera_fb_return);
     captureDurationUs.store(static_cast<uint32_t>(esp_timer_get_time() - acquisitionStarted));
     if (frame == nullptr)
     {
@@ -190,7 +191,7 @@ void StreamingService::captureLoop()
       next.reset();
       frameErrors.fetch_add(1);
     }
-    esp_camera_fb_return(frame);
+    frame.reset();
     if (next)
     {
       xSemaphoreTake(frameMutex, portMAX_DELAY);
@@ -526,10 +527,6 @@ void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationServi
       [this, state](uint8_t *buffer, size_t maxLength, size_t)
       {
         if (state->stopped)
-        {
-          return static_cast<size_t>(0);
-        }
-        if (!cameraReady.load() && !cameraReconfiguring.load() && !state->frame)
         {
           return static_cast<size_t>(0);
         }
