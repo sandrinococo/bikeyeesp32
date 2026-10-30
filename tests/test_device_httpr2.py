@@ -342,7 +342,11 @@ class DeviceHttpClient:
         try:
             status_code = response.status
             response_headers = response.headers
-            response_body = response.read(512) if status_code == 200 else response.read()
+            response_body = (
+                self.read_stream_probe(response)
+                if status_code == 200
+                else response.read()
+            )
         except (OSError, TimeoutError) as error:
             raise AssertionError(f"stream probe failed: {error}") from error
         finally:
@@ -351,6 +355,17 @@ class DeviceHttpClient:
         body_text = response_body.decode("utf-8", errors="replace")
         self._log_response(status_code, response_headers, body_text)
         return status_code, response_headers, response_body
+
+    @staticmethod
+    def read_stream_probe(response: http.client.HTTPResponse) -> bytes:
+        """Read until the first multipart boundary without waiting for a full buffer."""
+        body = bytearray()
+        while len(body) < 4096 and b"--frame" not in body:
+            chunk = response.read1(min(512, 4096 - len(body)))
+            if not chunk:
+                break
+            body.extend(chunk)
+        return bytes(body)
 
     def measure_stream_throughput(
         self, api_key: str, timestamp: str, duration_seconds: int = 10
@@ -440,6 +455,8 @@ class DeviceHttpClient:
                 )
 
             content_type = response.headers.get("Content-Type", "sconosciuto")
+            if "multipart/x-mixed-replace" not in content_type:
+                raise AssertionError(f"unexpected stream Content-Type: {content_type!r}")
             self._print(f"Stream connesso. Content-Type: {content_type}")
             start_time = time.monotonic()
             deadline = start_time + duration_seconds
@@ -494,6 +511,8 @@ class DeviceHttpClient:
                 raise AssertionError(
                     f"stream ended after {elapsed:.2f}s; expected {duration_seconds}s"
                 )
+            if frame_count == 0:
+                raise AssertionError("stream delivered no complete JPEG frames")
             self._print(
                 f"Stream completato. Ricevuti {frame_count} frame totali "
                 f"in {elapsed:.2f} secondi."
@@ -516,6 +535,18 @@ class DeviceHttpTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         """Create one session for the suite and reuse it across authenticated tests."""
         cls.registration_response = cls.client.register()
+
+    def require_camera_ready(self) -> None:
+        """Skip stream tests when the device reports that its camera cannot stream."""
+        camera = self.client.get_status().get("camera")
+        self.assertIsInstance(camera, dict, "/status camera must be a JSON object")
+        self.assertIn("ready", camera)
+        self.assertIn("reconfiguring", camera)
+        if not camera["ready"] or camera["reconfiguring"]:
+            self.skipTest(
+                "camera is unavailable for streaming "
+                f"(ready={camera['ready']}, reconfiguring={camera['reconfiguring']})"
+            )
 
     def test_01_device_exists(self) -> None:
         """The board must answer GET /status with the expected device contract."""
@@ -657,6 +688,7 @@ class DeviceHttpTest(unittest.TestCase):
             f"invalid API key returned HTTP {invalid_status}: {invalid_body!r}",
         )
 
+        self.require_camera_ready()
         valid_timestamp = str(int(time.time()))
         message = f"{session_token}:{valid_timestamp}"
         valid_api_key = hmac.new(
@@ -677,7 +709,8 @@ class DeviceHttpTest(unittest.TestCase):
         self.assertIn(b"--frame", first_bytes)
 
     def test_58_stream_is_concurrent_with_status(self) -> None:
-        """An open MJPEG stream must not block status or allow a second stream."""
+        """A new stream must replace the current stream without blocking status."""
+        self.require_camera_ready()
         session_token = self.client.register()["sessionToken"]
 
         def signed_headers() -> tuple[str, str]:
@@ -704,7 +737,7 @@ class DeviceHttpTest(unittest.TestCase):
                 "multipart/x-mixed-replace",
                 stream_response.headers.get("Content-Type", ""),
             )
-            first_bytes = stream_response.read(512)
+            first_bytes = self.client.read_stream_probe(stream_response)
             self.assertIn(b"--frame", first_bytes)
 
             status = self.client.get_status()
@@ -716,15 +749,32 @@ class DeviceHttpTest(unittest.TestCase):
             )
             self.assertEqual(
                 second_response.status,
-                503,
+                200,
                 f"second stream returned HTTP {second_response.status}",
             )
-            second_body = second_response.read()
-            try:
-                error = json.loads(second_body)
-            except json.JSONDecodeError as error:
-                self.fail(f"second stream returned invalid JSON: {second_body!r}")
-            self.assertEqual(error.get("error"), "stream is already active")
+            self.assertIn(
+                "multipart/x-mixed-replace",
+                second_response.headers.get("Content-Type", ""),
+            )
+            second_bytes = self.client.read_stream_probe(second_response)
+            self.assertIn(b"--frame", second_bytes)
+
+            if stream_connection.sock is not None:
+                stream_connection.sock.settimeout(
+                    min(self.client.timeout_seconds, 1.0)
+                )
+            close_deadline = time.monotonic() + self.client.timeout_seconds
+            while time.monotonic() < close_deadline:
+                try:
+                    previous_bytes = stream_response.read1(4096)
+                except socket.timeout:
+                    self.fail("previous stream stayed open after the second stream started")
+                except (OSError, http.client.HTTPException):
+                    break
+                if not previous_bytes:
+                    break
+            else:
+                self.fail("previous stream stayed open after the second stream started")
         finally:
             if second_connection is not None:
                 self.client._force_close_connection(second_connection)
@@ -796,6 +846,7 @@ class DeviceHttpTest(unittest.TestCase):
 
     def test_57_stream_logging_for_5_seconds(self) -> None:
         """Check that the stream closes and is released after five seconds."""
+        self.require_camera_ready()
         session_token = self.client.register()["sessionToken"]
         timestamp = str(int(time.time()))
         message = f"{session_token}:{timestamp}"
@@ -817,6 +868,7 @@ class DeviceHttpTest(unittest.TestCase):
 
     def test_59_stream_wifi_throughput_for_at_least_10_seconds(self) -> None:
         """Misura frame JPEG/s e byte/s ricevuti via Wi-Fi per almeno 10 secondi."""
+        self.require_camera_ready()
         session_token = self.client.register()["sessionToken"]
         timestamp = str(int(time.time()))
         message = f"{session_token}:{timestamp}"
@@ -874,6 +926,7 @@ class DeviceHttpTest(unittest.TestCase):
     
     def test_61_camera_reconfiguration_keeps_streaming(self) -> None:
         """Changed camera quality and buffer count must still deliver a 10s stream."""
+        self.require_camera_ready()
         session_token = self.client.register()["sessionToken"]
         original = self.client.get_status()["camera"]
         original_config = {

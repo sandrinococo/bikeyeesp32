@@ -2,7 +2,7 @@
 
 ## Architettura
 
-Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP asincrone con ESPAsyncWebServer sulla porta 80. Lo stream MJPEG e' una risposta a chunk, quindi le altre route restano gestibili mentre il client riceve i frame. E' ammesso un solo stream attivo per volta.
+Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP asincrone con ESPAsyncWebServer sulla porta 80. Lo stream MJPEG e' una risposta a chunk, quindi le altre route restano gestibili mentre il client riceve i frame. E' ammesso un solo stream attivo per volta: una nuova richiesta chiude e sostituisce quello precedente.
 
 `src/main.cpp` compone i servizi, inizializza l'hardware e registra il routing:
 
@@ -106,10 +106,16 @@ Il test `test_register_invalidates_previous_session` verifica che una nuova
 registrazione sostituisca la sessione precedente: il vecchio token riceve
 `401`, mentre il nuovo token continua a funzionare.
 
-Il test `test_stream_authentication` verifica che `GET /stream` rifiuti una
-firma non valida con `401` e che una firma valida restituisca `200`, content
-type MJPEG e l'inizio del primo frame. Il test chiude la connessione dopo il
-probe, perche' lo stream e' intenzionalmente continuo.
+I test dello stream richiedono che `/status` riporti la camera pronta e non in
+riconfigurazione; se la camera non e' disponibile, i test interessati vengono
+segnalati come saltati con lo stato rilevato. Il test
+`test_56_stream_authentication` verifica che `GET /stream` rifiuti una firma
+non valida con `401` e che una firma valida restituisca `200`, content type
+MJPEG e l'inizio del primo frame. Il test
+`test_58_stream_is_concurrent_with_status` verifica che `/status` resti
+accessibile mentre scorre il video e che una seconda richiesta sostituisca lo
+stream precedente. I test chiudono le connessioni dopo le verifiche, perche'
+lo stream e' intenzionalmente continuo.
 
 Il test restituisce codice di uscita `0` se tutti i controlli passano. In
 alternativa si possono impostare `ESP32_DEVICE_URL` e `ESP32_HTTP_TIMEOUT` come
@@ -199,4 +205,3 @@ monitor
 - interuttore batteria acceso
 - la scheda esp32 e' collegata a scheda programmatrice senza 5V
 - scheda programmatrice collegata via USB a pc
-
