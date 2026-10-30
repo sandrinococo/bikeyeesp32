@@ -491,7 +491,7 @@ void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationServi
     previous->frame.reset();
     if (previous->client != nullptr)
     {
-      previous->client->close(true);
+      previous->client->close();
     }
   }
   auto state = std::make_shared<StreamState>();
