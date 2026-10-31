@@ -416,6 +416,10 @@ size_t fillStreamChunk(StreamState &state,
       if (!state.frame || state.frame->sequence == state.lastSequence)
       {
         state.frame.reset();
+        if (state.stopped)
+        {
+          return 0;
+        }
         return written > 0 ? written : RESPONSE_TRY_AGAIN;
       }
       state.sendStartedAt = millis();
@@ -530,24 +534,60 @@ void StreamingService::handle(AsyncWebServerRequest *request, ConfigurationServi
         {
           return static_cast<size_t>(0);
         }
-        return fillStreamChunk(*state, [this]()
-                               {
-          std::shared_ptr<CapturedFrame> frame;
-          if (xSemaphoreTake(frameMutex, 0) == pdTRUE) {
-            frame = latestFrame;
-            xSemaphoreGive(frameMutex);
-          }
-          return frame; }, [this, state](uint32_t duration, uint32_t age)
-                               {
-          frameChunkMs.store(duration);
-          frameChunkAgeMs.store(age);
-          ++state->frameCount;
-          const uint32_t elapsed = millis() - state->startMillis;
-          if (elapsed >= 1000) {
-            fps.store(state->frameCount * 1000.0f / elapsed);
-            state->frameCount = 0;
-            state->startMillis = millis();
-          } }, buffer, maxLength);
+        return fillStreamChunk(
+            *state,
+            [this, state]()
+            {
+              uint32_t waitStarted = millis();
+              for (;;)
+              {
+                if (state->stopped)
+                {
+                  return std::shared_ptr<CapturedFrame>();
+                }
+                if (cameraReconfiguring.load())
+                {
+                  vTaskDelay(pdMS_TO_TICKS(1));
+                  continue;
+                }
+                if (!cameraReady.load())
+                {
+                  state->stopped = true;
+                  return std::shared_ptr<CapturedFrame>();
+                }
+
+                std::shared_ptr<CapturedFrame> frame;
+                if (xSemaphoreTake(frameMutex, 0) == pdTRUE)
+                {
+                  frame = latestFrame;
+                  xSemaphoreGive(frameMutex);
+                }
+                if (frame && frame->sequence != state->lastSequence)
+                {
+                  return frame;
+                }
+                if (millis() - waitStarted >= 1000)
+                {
+                  state->stopped = true;
+                  return std::shared_ptr<CapturedFrame>();
+                }
+                vTaskDelay(pdMS_TO_TICKS(1));
+              }
+            },
+            [this, state](uint32_t duration, uint32_t age)
+            {
+              frameChunkMs.store(duration);
+              frameChunkAgeMs.store(age);
+              ++state->frameCount;
+              const uint32_t elapsed = millis() - state->startMillis;
+              if (elapsed >= 1000)
+              {
+                fps.store(state->frameCount * 1000.0f / elapsed);
+                state->frameCount = 0;
+                state->startMillis = millis();
+              }
+            },
+            buffer, maxLength);
       });
   if (response == nullptr)
   {

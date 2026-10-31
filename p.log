@@ -5,8 +5,682 @@ REQUEST
     Accept: application/json
     Content-type: application/json
   body:
-{"pin": "482917", "nonce": "12a4b57dfe451e79466d94e8040da8be", "proof": "68234c7faafcd13c6ff88bba38cfb943327496c5685d9234c4942f8930de1a83", "timestamp": 1791308248}
+{"pin": "482917", "nonce": "4344e15af54aec567cef2fb4b70b9419", "proof": "da6ed9843ad873f03722732bd7828d90021ead8384522ab19629b9b92ef1d08d", "timestamp": 1793468752}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"465fc678d14143283dd1aa83ec05308325ff03bf66764c3b689869c38a4697d2","timestamp":1793468752}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1502
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":268,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":35.7120018,"frameChunkMs":1,"frameChunkAgeMs":46,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":58,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":170280,"totalBytes":314344,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "da52421b8c3dce9d6bce18b01eb52137", "proof": "bdb1563ae3dad79e7ef23b67856a8eda038eae66ba842c521e32bb1cfa65062f", "timestamp": 1793468755}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"512a664c2f1fe9b8b743c01433682f507d4abc04d347b1fd85358c708b88675e","timestamp":1793468755}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468755
+    X-api-key: 5c866a4ba116d40063d11d74807361959b2c23f0e0f7c28c3c0a0981bfc4ca1a
+  body:
+{"enabled": true, "count": 10, "mode": "solid", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 401
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 27
+    Content-Type: application/json
+  body:
+{"error":"invalid api key"}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468756
+    X-api-key: 7dc54fb8016941422772c72df1a24493415e88c8dff2cd91ee85b1c6c27c71b2
+  body:
+{"enabled": true, "count": 10, "mode": "solid", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 125
+    Content-Type: application/json
+  body:
+{"updated":true,"enabled":true,"count":10,"mode":"solid","brightness":80,"red":255,"green":40,"blue":0,"intervalMillis":1000}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "b1e21198db803ce3e20123c0caa465c3", "proof": "cce572f721f09149defac199ae78b10d630daf62870efc80de1dd8b7975acf38", "timestamp": 1793468756}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"12f7564db83c06099ceff572b959e39b5a3a67f947fc9aacd6f592f06c74a174","timestamp":1793468756}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468756
+    X-api-key: 0000000000000000000000000000000000000000000000000000000000000000
+  body:
+{"enabled": true, "count": 10, "mode": "solid", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 401
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 27
+    Content-Type: application/json
+  body:
+{"error":"invalid api key"}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468757
+    X-api-key: 25703cd6b7e0b0ef8e47f4fe80b83aeafa690976c6722cd8317e451a4add6043
+  body:
+{"enabled": true, "count": 10, "mode": "solid", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 125
+    Content-Type: application/json
+  body:
+{"updated":true,"enabled":true,"count":10,"mode":"solid","brightness":80,"red":255,"green":40,"blue":0,"intervalMillis":1000}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1501
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":271,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.75024796,"captureMs":36.18199921,"frameChunkMs":1,"frameChunkAgeMs":46,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":74,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":170280,"totalBytes":314344,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":true,"configured":true,"enabled":true,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"solid","intervalMillis":1000,"blinkOn":true},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468760
+    X-api-key: 4726fe757f69f1825c721d7c911d793e300e7180c28597b5c349e4d2206d1a58
+  body:
+{"enabled": false, "count": 10, "mode": "off", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"updated":true,"enabled":false,"count":10,"mode":"off","brightness":80,"red":255,"green":40,"blue":0,"intervalMillis":1000}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":274,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.75024796,"captureMs":34.42699814,"frameChunkMs":1,"frameChunkAgeMs":46,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":45,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":170124,"totalBytes":314328,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "6a2580e0974628091c75969a737337cc", "proof": "c73917cf2ff69678b1b14d9fa43888c553955d4042c58636083a806a31cca921", "timestamp": 1793468760}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"4a5b8948d96aabf2c8d0881b8879c85303dabac85fad8e33c9f1faebe4ea4f16","timestamp":1793468760}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468760
+    X-api-key: 0000000000000000000000000000000000000000000000000000000000000000
+  body:
+{"enabled": true, "count": 10, "mode": "solid", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 401
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 27
+    Content-Type: application/json
+  body:
+{"error":"invalid api key"}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/led
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468761
+    X-api-key: b7ea3cb6be7c834cdd49ad38f55833ad9b02c49891d7ec3d867fbb1f6e487ce8
+  body:
+{"enabled": false, "count": 10, "mode": "off", "brightness": 80, "red": 255, "green": 40, "blue": 0}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"updated":true,"enabled":false,"count":10,"mode":"off","brightness":80,"red":255,"green":40,"blue":0,"intervalMillis":1000}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":275,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":36.18799973,"frameChunkMs":1,"frameChunkAgeMs":46,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":63,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":170120,"totalBytes":314328,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "cac1a8c05cd0eaae32ab0f95665df80c", "proof": "68873ba5143ca05954e55649023f76db936f961068b688da47e2bb9de35a363e", "timestamp": 1793468761}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"33adf0806eb75f6937c98e6e58c567d5c512ea4d198337f1fb7ccb9c2edcdee8","timestamp":1793468761}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468761
+    X-api-key: 0000000000000000000000000000000000000000000000000000000000000000
+RESPONSE
+  status: 401
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 27
+    Content-Type: application/json
+  body:
+{"error":"invalid api key"}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":275,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":35.02199936,"frameChunkMs":1,"frameChunkAgeMs":46,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":66,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169896,"totalBytes":314312,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468761
+    X-api-key: 948a772dbde16816c4b04f41ebcc56b01af9f50c9c51a51e1cd71f0d0d84d796
+RESPONSE
+  status: 200
+  headers:
+    Cache-Control: no-cache
+    Connection: close
+    Accept-Ranges: none
+    Transfer-Encoding: chunked
+    Content-Type: multipart/x-mixed-replace; boundary=frame
+  body:
+b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 5274\r\n\r\n\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00\x00\x00\x00\x00\x00\xff\xdb\x00C\x00\x14\x0e\x0f\x12\x0f\r\x14\x12\x10\x12\x17\x15\x14\x18\x1e2!\x1e\x1c\x1c\x1e=,.$2I@LKG@FEPZsbPUmVEFd\x88emw{\x81\x82\x81N`\x8d\x97\x8c}\x96s~\x81|\xff\xdb\x00C\x01\x15\x17\x17\x1e\x1a\x1e;!!;|SFS||||||||||||||||||||||||||||||||||||||||||||||||||\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142\x81\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19\x1a%&\'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xff\xc4\x00\x1f\x01\x00\x03\x01\x01\x01\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00\xb5\x11\x00\x02\x01\x02\x04\x04\x03\x04\x07\x05\x04\x04\x00\x01\x02w\x00\x01\x02\x03\x11\x04\x05!1\x06\x12AQ\x07aq\x13"2\x81\x08\x14B\x91\xa1'
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1502
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":275,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.7227726,"captureMs":35.26499939,"frameChunkMs":1,"frameChunkAgeMs":74,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":65,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169440,"totalBytes":314296,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "12d81bd0fd275b1b299ded0d59294ad5", "proof": "a4bac58260333f51ad761cb160874269d2177df3ae018c6f96a1e4cd729f8da6", "timestamp": 1793468762}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"9a89de031dc981dfd716dde35e815c192da0d7c17164014d4903cdddf0d92d46","timestamp":1793468762}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468762
+    X-api-key: 9caf1d0e4bc0a1e3e0a149002c34f443aa852047c631f89deed36f858315f90c
+Stream connesso. Content-Type: multipart/x-mixed-replace; boundary=frame
+[STREAM LOG - 0s] Tipo: image/jpeg | Dimensione: 5275 bytes | Frame differente dal precedente: True (Hash: 9c103de7)
+[STREAM LOG - 1s] Tipo: image/jpeg | Dimensione: 5273 bytes | Frame differente dal precedente: True (Hash: b5ed8803)
+[STREAM LOG - 2s] Tipo: image/jpeg | Dimensione: 5280 bytes | Frame differente dal precedente: True (Hash: b116b060)
+[STREAM LOG - 3s] Tipo: image/jpeg | Dimensione: 5245 bytes | Frame differente dal precedente: True (Hash: 0505000c)
+[STREAM LOG - 4s] Tipo: image/jpeg | Dimensione: 5246 bytes | Frame differente dal precedente: True (Hash: 91edd80c)
+Stream completato. Ricevuti 131 frame totali in 5.03 secondi.
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":281,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":36.86600113,"frameChunkMs":1,"frameChunkAgeMs":39,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":65,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169740,"totalBytes":314312,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":281,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":41.11899948,"frameChunkMs":1,"frameChunkAgeMs":39,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":69,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":170016,"totalBytes":314336,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "eca90e90be6199e1bdb146614efd7146", "proof": "72ff94b142362be26fd441f2302569d453965257da0947f159dcf0b71e0f4b15", "timestamp": 1793468767}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"94cdc8333cc20f731bfa36393b08058ac691c2352357dfcb0ba1599311496fc9","timestamp":1793468767}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468767
+    X-api-key: 045d8196141a9a2ef4a7d2b2fecd72b640a4b8246eb3b765f2d677230879b199
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1502
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":281,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.7227726,"captureMs":35.09899902,"frameChunkMs":35,"frameChunkAgeMs":75,"streamActive":true,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":65,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":167440,"totalBytes":313888,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468768
+    X-api-key: 133046a8130ceda81031ea15d336785d034047f3805b476035409f41bb15ef45
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1501
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":282,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.8053627,"captureMs":35.6230011,"frameChunkMs":0,"frameChunkAgeMs":51,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":41,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169816,"totalBytes":314312,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "525b5ffcbd89e10bc371538413f23076", "proof": "b76cb8930f9a09e90793c9ddeea52cd161cc0c3b9f1e87a0eb87fa1290ee81f7", "timestamp": 1793468769}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"c2487cffd9ecf7e265a57ef396fd099fb7c01843b15bcd4f6d14615e92f84a7d","timestamp":1793468769}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468769
+    X-api-key: 54c7bae6907dd72f12264bece1a6f2a5c3fa5349911b327f56141644ac488e9c
+Throughput Wi-Fi: 111 frame in 10.61s (10.46 frame/s), 593750 byte HTTP (55938.55 byte/s)
+  secondo 1: 23 frame
+  secondo 2: 27 frame
+  secondo 3: 13 frame
+  secondo 4: 11 frame
+  secondo 5: 13 frame
+  secondo 6: 14 frame
+  secondo 7: 3 frame
+  secondo 8: 2 frame
+  secondo 9: 5 frame
+  secondo 10: 0 frame
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "7f4416adcb7e1308c5683334aea56430", "proof": "7f9d09beab5af799aa2a4fef276445cef187c26b0f45cca8d7b7efb41773b069", "timestamp": 1793468780}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"3bac7679903105ef9663ce747cc5d30c3d7423a42fc8997d062c8946b0a978a7","timestamp":1793468780}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":293,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":35.12200165,"frameChunkMs":1,"frameChunkAgeMs":44,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":69,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169676,"totalBytes":314296,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/camera
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468780
+    X-api-key: d2e820929d75c8b10e8f3c9856673c62fa0566efe9adcdf93de27b7b975ce64f
+  body:
+{"resolution": "QVGA", "framebuffers": 3, "jpegquality": 20}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 100
+    Content-Type: application/json
+  body:
+{"configured":true,"changed":false,"camera":{"resolution":"QVGA","framebuffers":3,"jpegquality":20}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1502
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":295,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":34.7859993,"frameChunkMs":1,"frameChunkAgeMs":44,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":65,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169676,"totalBytes":314296,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":295,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":34.89400101,"frameChunkMs":1,"frameChunkAgeMs":44,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":50,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169264,"totalBytes":314264,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/register
+  headers:
+    Accept: application/json
+    Content-type: application/json
+  body:
+{"pin": "482917", "nonce": "769d4d53b04fd5ed786dd3ed59cd51f5", "proof": "5a9fedae17f9f4ba7ed70b3d8b24d652126af796ca4cb994c05205e2aedc9d1e", "timestamp": 1793468781}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 124
+    Content-Type: application/json
+  body:
+{"registered":true,"sessionToken":"45f76fd2d7aebfa96f0ed0da6fec63e80fd722314f4cab11e8181d953949e732","timestamp":1793468781}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":295,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":27.77777863,"captureMs":35.01499939,"frameChunkMs":1,"frameChunkAgeMs":44,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":56,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169676,"totalBytes":314296,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/camera
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468781
+    X-api-key: ba281ad1279084b6515a83cba3362a956b332173346a4d878cd6661889e88deb
+  body:
+{"resolution": "QVGA", "framebuffers": 4, "jpegquality": 19}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 99
+    Content-Type: application/json
+  body:
+{"configured":true,"changed":true,"camera":{"resolution":"QVGA","framebuffers":4,"jpegquality":19}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1503
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":298,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":19,"framebuffers":4,"fps":0,"captureFps":27.77777863,"captureMs":35.45700073,"frameChunkMs":1,"frameChunkAgeMs":44,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":48,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":169240,"totalBytes":314248,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":7,"stationDisconnects":6},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/stream
+  headers:
+    Accept: multipart/x-mixed-replace
+    X-timestamp: 1793468785
+    X-api-key: f04fa2939ae889ea2c93d752a1a91ecd5db8bf50c9967e1334d25cb2f89ff0cf
+REQUEST
+  method: POST
+  uri: http://192.168.4.1/camera
+  headers:
+    Accept: application/json
+    Content-type: application/json
+    X-timestamp: 1793468791
+    X-api-key: 3d26668ad5c547175ba868f5037bbb9240f1e0a108107593feddde25fa02dcc1
+  body:
+{"resolution": "QVGA", "framebuffers": 3, "jpegquality": 20}
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 99
+    Content-Type: application/json
+  body:
+{"configured":true,"changed":true,"camera":{"resolution":"QVGA","framebuffers":3,"jpegquality":20}}
+REQUEST
+  method: GET
+  uri: http://192.168.4.1/status
+  headers:
+    Accept: application/json
+RESPONSE
+  status: 200
+  headers:
+    Connection: close
+    Accept-Ranges: none
+    Content-Length: 1506
+    Content-Type: application/json
+  body:
+{"tipo":"ESP32-CAM","version":"1.0","buildDateTime":"Oct 31 2026 18:29:30","deviceName":"ESP32-CAM-AI","serial":"1234567890","running":true,"system":{"bootId":3960142001,"uptimeSeconds":308,"resetReason":"powerOn","resetReasonCode":1},"camera":{"ready":true,"reconfiguring":false,"resolution":"QVGA","format":"JPEG","jpegquality":20,"framebuffers":3,"fps":0,"captureFps":13.98601437,"captureMs":34.81600189,"frameChunkMs":283,"frameChunkAgeMs":351,"streamActive":false,"frameErrors":0,"hasCapturedFrame":true,"lastFrameAgeMs":57,"settings":{"brightness":0,"contrast":0,"saturation":0,"autoExposure":1,"exposureLevel":0}},"health":"ready","message":"Device is running","diagnostics":{"errorCount":0,"lastError":null},"ram":{"freeBytes":162840,"totalBytes":314136,"minimumFreeBytes":118680,"largestFreeBlockBytes":4063220},"wifi":{"mode":"accessPoint","signalDbm":0,"apStarted":true,"ip":"192.168.4.1","connectedStations":1,"stationConnects":8,"stationDisconnects":7},"battery":{"present":false,"voltageMv":0,"levelPercent":null,"charging":false,"full":false,"sampleIntervalMillis":1000,"averageSamples":10,"samplesCollected":0,"chargeDetection":"unavailable"},"ledStatus":{"present":false,"configured":false,"enabled":false,"gpio":13,"count":10,"maxCount":50,"brightness":80,"red":255,"green":40,"blue":0,"mode":"off","intervalMillis":1000,"blinkOn":false},"internalLedStatus":{"present":true,"colorable":false,"gpio":4,"state":"off","on":false,"lowBatteryIntervalMillis":250,"chargingIntervalMillis":1000}}
 
 TEST REPORT
-FAILED DeviceHttpTest): request to http://192.168.4.1/register timed out
-RESULT: FAILED | tests=0 | passed=-1 | failed=1
+OK     test_01_device_exists: completed
+OK     test_02_register: completed
+OK     test_03_register_invalidates_previous_session: completed
+OK     test_04_led_authentication: completed
+OK     test_10_internal_led_status_contract: completed
+OK     test_12_led_authentication_OFF: completed
+OK     test_13_battery_status_contract: completed
+OK     test_56_stream_authentication: completed
+OK     test_57_stream_logging_for_5_seconds: completed
+OK     test_58_stream_is_concurrent_with_status: completed
+OK     test_59_stream_wifi_throughput_for_at_least_10_seconds: completed
+OK     test_60_camera_accepts_current_status_configuration: completed
+FAILED test_61_camera_reconfiguration_keeps_streaming: stream throughput measurement failed while reading stream: timed out
+RESULT: FAILED | tests=13 | passed=12 | failed=1

@@ -2,7 +2,7 @@
 
 ## Architettura
 
-Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP asincrone con ESPAsyncWebServer sulla porta 80. Lo stream MJPEG e' una risposta a chunk, quindi le altre route restano gestibili mentre il client riceve i frame. E' ammesso un solo stream attivo per volta: una nuova richiesta chiude e sostituisce quello precedente.
+Il progetto e' un firmware Arduino per ESP32-CAM AI Thinker, gestito con PlatformIO. Il dispositivo avvia una rete Wi-Fi in modalita' access point, inizializza la camera e serve API HTTP asincrone con ESPAsyncWebServer sulla porta 80. Lo stream MJPEG e' una risposta a chunk; il callback attende una nuova sequenza di frame fino a un secondo e termina lo stream se la camera non produce frame. E' ammesso un solo stream attivo per volta: una nuova richiesta chiude e sostituisce quello precedente.
 
 `src/main.cpp` compone i servizi, inizializza l'hardware e registra il routing:
 
@@ -69,72 +69,47 @@ pio device monitor --baud 115200
 
 ## Test HTTP
 
-Il test [tests/test_device_httpr2.py](tests/test_device_httpr2.py) usa solo la
-libreria standard Python e verifica che la scheda risponda a `GET /status`.
-Controlla anche il contratto JSON di batteria, LED interno e striscia LED.
+Il test [tests/test_device_httpr2.py](tests/test_device_httpr2.py) usa la
+libreria standard Python, mentre il test dello stream richiede anche OpenCV e
+NumPy. Verifica che `GET /status` restituisca un JSON valido, che il dispositivo
+risulti attivo e che siano presenti versione e data di build. Prima dell'intera
+suite viene eseguito `connetti_esp32.bat ON`;
+`connetti_esp32.bat OFF` viene eseguito alla fine della suite anche se uno o
+piu' test falliscono. Ogni test crea e chiude la propria connessione HTTP.
+`test_02_register_valid_and_invalid_proof` verifica che `/register` accetti
+PIN, nonce e prova HMAC corretti e rifiuti una prova HMAC alterata con HTTP 401.
+`test_03_led_start_stop_blink_stop` esegue nell'ordine start, stop, blink e stop;
+prima di ciascuna richiesta `POST /led` registra una nuova sessione e firma gli
+header di autenticazione con il relativo token.
+`test_04_camera_accepts_valid_and_rejects_invalid_parameters` verifica una
+configurazione ammessa, rifiuta una qualità JPEG fuori intervallo e ripristina
+in ogni caso la configurazione iniziale letta da `/status`.
+`test_05_stream_displays_mjpeg_frames_for_at_least_5_seconds` registra una
+sessione, apre `/stream` e mostra i frame JPEG decodificati con OpenCV per
+almeno cinque secondi; la console riporta il numero progressivo e le dimensioni
+di ogni frame. Richiede una sessione grafica attiva e OpenCV:
+
+```powershell
+python -m pip install -r requirements-test.txt
+```
+
+Ogni test stampa in console inizio/fine e ogni richiesta HTTP con URI, header e
+body, seguita da status, header e body della risposta. Alla fine viene stampato
+il riepilogo con esito e conteggio dei test passati, falliti e saltati.
 
 **Con il computer collegato alla rete Wi-Fi della scheda eseguire:**
 
 ```powershell
 .venv\Scripts\activate.bat
 ```
-
 ```powershell
 python tests/test_device_httpr2.py --verbose
 ```
-
-Per usare un indirizzo o un timeout diversi:
-
-```powershell
-python tests/test_device_httpr2.py --url http://192.168.4.1 --timeout 10
-```
-
-Il test `test_register` usa il PIN predefinito `482917`. Per un PIN diverso:
-
-```powershell
-python tests/test_device_httpr2.py --pin 123456
-```
-
-In alternativa impostare `ESP32_DEVICE_PIN` nell'ambiente.
-
-Il test `test_led_authentication` registra una sessione, invia una richiesta
-`POST /led` con firma HMAC errata e verifica `401`, poi ripete la richiesta con
-la firma corretta. Con la striscia disabilitata il secondo passaggio attende
-`409 led strip is not configured`; con la striscia configurata attende `200`.
-
-Il test `test_register_invalidates_previous_session` verifica che una nuova
-registrazione sostituisca la sessione precedente: il vecchio token riceve
-`401`, mentre il nuovo token continua a funzionare.
-
-I test dello stream richiedono che `/status` riporti la camera pronta e non in
-riconfigurazione; se la camera non e' disponibile, i test interessati vengono
-segnalati come saltati con lo stato rilevato. Il test
-`test_56_stream_authentication` verifica che `GET /stream` rifiuti una firma
-non valida con `401` e che una firma valida restituisca `200`, content type
-MJPEG e l'inizio del primo frame. Il test
-`test_58_stream_is_concurrent_with_status` verifica che `/status` resti
-accessibile mentre scorre il video e che una seconda richiesta sostituisca lo
-stream precedente. I test chiudono le connessioni dopo le verifiche, perche'
-lo stream e' intenzionalmente continuo.
 
 Il test restituisce codice di uscita `0` se tutti i controlli passano. In
 alternativa si possono impostare `ESP32_DEVICE_URL` e `ESP32_HTTP_TIMEOUT` come
 variabili d'ambiente. Il test richiede che la scheda sia accesa e che il PC
 abbia gia' effettuato la connessione al suo access point.
-
-Al termine viene stampato un report con una riga per ogni test (`OK` o
-`FAILED`), un messaggio sintetico e il riepilogo complessivo, ad esempio:
-
-```text
-TEST REPORT
-OK     test_device_exists: completed
-OK     test_register: completed
-OK     test_register_invalidates_previous_session: completed
-OK     test_led_authentication: completed
-OK     test_stream_authentication: completed
-OK     test_battery_status_contract: completed
-RESULT: OK | tests=7 | passed=7 | failed=0
-```
 
 Il target definito in `platformio.ini` e' `esp32cam`, con framework Arduino. Il build usa ArduinoJson `^6.21.5` e Adafruit NeoPixel `^1.12.0`; PlatformIO scarica queste dipendenze automaticamente.
 
@@ -188,7 +163,10 @@ Pulisce l'ultima build localmente
 > pio run --target clean
 
 Build e carica su ESP32
+
+Su scheda programmatrice tieni premuto O01 (BOOT/FLASH) e premi RST , rilascia RST e rilascia O01 (BOOT/FLASH)
 > pio run --target upload --upload-port COM4
+Alla fine premi RST.
 
 se COM4 e' la porta a cui e' connesso monitor serial deve essere chiuso.
 
@@ -205,3 +183,13 @@ monitor
 - interuttore batteria acceso
 - la scheda esp32 e' collegata a scheda programmatrice senza 5V
 - scheda programmatrice collegata via USB a pc
+
+## nel caso la scheda non risponda piu' per problemi di flash corrotta (monitor non mostra nulla neanche dopo RST)
+
+E' possibile fare erase della memoria flash.
+
+> pip install esptool==4.8.1
+
+Su scheda programmatrice tieni premuto O01 (BOOT/FLASH) e premi RST , rilascia RST e rilascia O01 (BOOT/FLASH)
+> python -m esptool --chip esp32 --port COM4 erase_flash
+Alla fine premi RST.

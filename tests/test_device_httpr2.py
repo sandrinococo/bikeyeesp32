@@ -1,9 +1,4 @@
-"""HTTP smoke tests for the ESP32-CAM device service.
-
-Run directly from VS Code or a terminal:
-    python tests/test_device_httpr2.py
-    python tests/test_device_httpr2.py --url http://192.168.4.1 --verbose
-"""
+"""HTTP smoke tests for the ESP32-CAM device."""
 
 from __future__ import annotations
 
@@ -14,396 +9,527 @@ import http.client
 import json
 import os
 import secrets
-import socket
-import sys
+import subprocess
 import time
 import unittest
-from dataclasses import dataclass
-from urllib.error import HTTPError, URLError
+from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
 
 
-@dataclass(frozen=True)
-class StreamThroughput:
-    elapsed_seconds: float
-    total_bytes: int
-    frame_count: int
-    frames_by_second: tuple[int, ...]
-
-
-@dataclass(frozen=True)
 class DeviceHttpClient:
-    """Small standard-library HTTP client for the unauthenticated status API."""
+    """Own one HTTP connection for the lifetime of a single test."""
 
-    base_url: str = "http://192.168.4.1"
-    timeout_seconds: float = 5.0
-    verbose: bool = True
-    device_pin: str = "482917"
+    def __init__(self, base_url: str, timeout_seconds: float) -> None:
+        parsed_url = urlsplit(base_url)
+        if parsed_url.scheme != "http" or parsed_url.hostname is None:
+            raise ValueError(f"unsupported device URL: {base_url!r}")
 
-    def _force_close_connection(self, connection: http.client.HTTPConnection) -> None:
-        """Forza la chiusura immediata della socket HTTP e rilascia la risorsa sull'ESP32."""
-        try:
-            if connection.sock:
-                connection.sock.shutdown(http.client.socket.SHUT_RDWR)
-        except Exception:
-            pass
-        finally:
-            connection.close()
-            # Pausa di cortesia per permettere all'ESP32 di liberare il socket
-            time.sleep(0.3)
+        self.host = parsed_url.hostname
+        self.port = parsed_url.port or 80
+        self.base_path = parsed_url.path.rstrip("/")
+        self.connection = http.client.HTTPConnection(
+            self.host,
+            self.port,
+            timeout=timeout_seconds,
+        )
+
+    def connect(self) -> None:
+        self.connection.connect()
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def _request_headers(self, headers: dict[str, str]) -> dict[str, str]:
+        return {
+            "Host": f"{self.host}:{self.port}",
+            "Accept-Encoding": "identity",
+            **headers,
+        }
 
     @staticmethod
-    def _print(message: str = "") -> None:
-        print(message, flush=True)
-
-    def _log_request(self, request: Request, body: str = "") -> None:
-        if not self.verbose:
-            return
-        self._print("REQUEST")
-        self._print(f"  method: {request.get_method()}")
-        self._print(f"  uri: {request.full_url}")
-        self._print("  headers:")
-        for name, value in request.header_items():
-            self._print(f"    {name}: {value}")
-        if body:
-            self._print("  body:")
-            self._print(body)
-
-    def _log_response(self, status_code: int, headers: object, body: str) -> None:
-        if not self.verbose:
-            return
-        self._print("RESPONSE")
-        self._print(f"  status: {status_code}")
-        self._print("  headers:")
+    def _log_request(
+        method: str,
+        uri: str,
+        headers: dict[str, str],
+        body: bytes = b"",
+    ) -> None:
+        print(f"\nHTTP REQUEST {method} {uri}", flush=True)
+        print("Request headers:", flush=True)
         for name, value in headers.items():
-            self._print(f"    {name}: {value}")
-        self._print("  body:")
-        self._print(body)
+            print(f"  {name}: {value}", flush=True)
+        print("Request body:", flush=True)
+        print(body.decode("utf-8", errors="replace") if body else "<empty>", flush=True)
 
-    def get_status(self) -> dict:
-        """Fetch and decode GET /status, raising an assertion-friendly error."""
-        url = f"{self.base_url.rstrip('/')}/status"
-        request = Request(url, method="GET", headers={"Accept": "application/json"})
-        self._log_request(request)
+    @staticmethod
+    def _log_response(
+        status: int,
+        headers: http.client.HTTPMessage,
+        body: bytes,
+    ) -> None:
+        print(f"HTTP RESPONSE {status}", flush=True)
+        print("Response headers:", flush=True)
+        for name, value in headers.items():
+            print(f"  {name}: {value}", flush=True)
+        print("Response body:", flush=True)
+        print(body.decode("utf-8", errors="replace") if body else "<empty>", flush=True)
+
+    def get_status(self) -> dict[str, object]:
+        path = f"{self.base_path}/status"
+        request_headers = self._request_headers({"Accept": "application/json"})
+        uri = f"http://{self.host}:{self.port}{path}"
+        self._log_request("GET", uri, request_headers)
+        self.connection.request(
+            "GET",
+            path,
+            headers=request_headers,
+        )
+        response = self.connection.getresponse()
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
-                status_code = response.status
-                response_headers = response.headers
-                body = response.read().decode("utf-8")
-        except HTTPError as error:
-            error_body = error.read().decode("utf-8", errors="replace")
-            self._log_response(error.code, error.headers, error_body)
-            raise AssertionError(f"GET {url} returned HTTP {error.code}") from error
-        except URLError as error:
-            raise AssertionError(f"device is unreachable at {url}: {error.reason}") from error
-        except TimeoutError as error:
-            raise AssertionError(f"request to {url} timed out") from error
+            body = response.read()
+            self._log_response(response.status, response.headers, body)
+            if response.status != 200:
+                raise AssertionError(
+                    f"GET /status returned HTTP {response.status}: {body!r}"
+                )
+        finally:
+            response.close()
 
-        self._log_response(status_code, response_headers, body)
-        if status_code != 200:
-            raise AssertionError(f"GET {url} returned HTTP {status_code}")
         try:
             payload = json.loads(body)
         except json.JSONDecodeError as error:
-            raise AssertionError(f"GET {url} returned invalid JSON: {body!r}") from error
+            raise AssertionError(f"GET /status returned invalid JSON: {body!r}") from error
         if not isinstance(payload, dict):
             raise AssertionError("/status response must be a JSON object")
         return payload
 
-    def register(self) -> dict:
-        """Register a fresh app session using the configured device PIN."""
+    def post_json(
+        self,
+        path: str,
+        payload: dict[str, object],
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        body = json.dumps(payload).encode("utf-8")
+        request_headers = self._request_headers({
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        })
+        if headers is not None:
+            request_headers.update(headers)
+        uri = f"http://{self.host}:{self.port}{self.base_path}{path}"
+        self._log_request("POST", uri, request_headers, body)
+        try:
+            self.connection.request(
+                "POST",
+                f"{self.base_path}{path}",
+                body=body,
+                headers=request_headers,
+            )
+            response = self.connection.getresponse()
+        except TimeoutError as error:
+            self.connection.close()
+            raise AssertionError(
+                f"POST {path} timed out after waiting {self.timeout_seconds:g}s "
+                "for the device response"
+            ) from error
+        try:
+            status_code = response.status
+            response_body = response.read()
+            self._log_response(status_code, response.headers, response_body)
+        finally:
+            response.close()
+
+        try:
+            response_payload = json.loads(response_body)
+        except json.JSONDecodeError as error:
+            raise AssertionError(
+                f"POST {path} returned invalid JSON: {response_body!r}"
+            ) from error
+        if not isinstance(response_payload, dict):
+            raise AssertionError(f"POST {path} response must be a JSON object")
+        return status_code, response_payload
+
+    def get_stream(self, timestamp: str, api_key: str) -> http.client.HTTPResponse:
+        path = f"{self.base_path}/stream"
+        request_headers = self._request_headers({
+            "Accept": "multipart/x-mixed-replace",
+            "X-TIMESTAMP": timestamp,
+            "X-API-KEY": api_key,
+        })
+        uri = f"http://{self.host}:{self.port}{path}"
+        self._log_request("GET", uri, request_headers)
+        self.connection.request("GET", path, headers=request_headers)
+        response = self.connection.getresponse()
+        if response.status == 200:
+            response_body = b"<MJPEG stream; frames are displayed live>"
+        else:
+            response_body = response.read()
+        self._log_response(response.status, response.headers, response_body)
+        return response
+
+
+class DeviceHttpTest(unittest.TestCase):
+    """Tests the device HTTP API using a separate connection for each test."""
+
+    base_url = os.getenv("ESP32_DEVICE_URL", "http://192.168.4.1")
+    timeout_seconds = float(os.getenv("ESP32_HTTP_TIMEOUT", "5"))
+    device_pin = os.getenv("ESP32_DEVICE_PIN", "482917")
+
+    @staticmethod
+    def _run_wifi_action(action: str) -> None:
+        script = Path(__file__).resolve().parents[1] / "connetti_esp32.bat"
+        subprocess.run(
+            ["cmd.exe", "/c", str(script), action],
+            cwd=script.parent,
+            check=True,
+        )
+
+    def setUp(self) -> None:
+        print(f"\n===== START {self.id()} =====", flush=True)
+        self.client = DeviceHttpClient(self.base_url, self.timeout_seconds)
+        self.addCleanup(self.client.close)
+        self.client.connect()
+
+    def tearDown(self) -> None:
+        print(f"===== END {self.id()} =====", flush=True)
+
+    def _wait_for_camera_capture(self, phase: str) -> dict[str, object]:
+        deadline = time.monotonic() + self.timeout_seconds
+        last_camera: dict[str, object] = {}
+        while True:
+            status = self.client.get_status()
+            camera = status.get("camera")
+            self.assertIsInstance(camera, dict, "/status camera must be a JSON object")
+            last_camera = camera
+            if (
+                camera.get("ready") is True
+                and camera.get("reconfiguring") is False
+                and camera.get("hasCapturedFrame") is True
+            ):
+                return camera
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.fail(
+                    f"camera did not capture a frame {phase} within "
+                    f"{self.timeout_seconds:g}s; last camera status: {last_camera}"
+                )
+            time.sleep(min(0.1, remaining))
+
+    def test_01_device_exists(self) -> None:
+        """GET /status must return valid device information."""
+        status = self.client.get_status()
+
+        self.assertIs(status.get("running"), True, "/status reports device not running")
+        version = status.get("version")
+        build_date_time = status.get("buildDateTime")
+        self.assertIsInstance(version, str)
+        self.assertTrue(version)
+        self.assertIsInstance(build_date_time, str)
+        self.assertTrue(build_date_time)
+
+        print(f"Versione firmware: {version}", flush=True)
+        print(f"Data build: {build_date_time}", flush=True)
+
+    def test_02_register_valid_and_invalid_proof(self) -> None:
+        """POST /register accepts a correct proof and rejects an incorrect one."""
         nonce = secrets.token_hex(16)
         timestamp = int(time.time())
+        correct_proof = hmac.new(
+            self.device_pin.encode("utf-8"),
+            nonce.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        valid_status, valid_response = self.client.post_json(
+            "/register",
+            {
+                "pin": self.device_pin,
+                "nonce": nonce,
+                "proof": correct_proof,
+                "timestamp": timestamp,
+            },
+        )
+        self.assertEqual(
+            valid_status,
+            200,
+            f"valid registration returned HTTP {valid_status}: {valid_response}",
+        )
+        self.assertIs(valid_response.get("registered"), True)
+        session_token = valid_response.get("sessionToken")
+        self.assertIsInstance(session_token, str)
+        self.assertTrue(session_token)
+        self.assertEqual(valid_response.get("timestamp"), timestamp)
+
+        invalid_proof = ("1" if correct_proof[0] == "0" else "0") + correct_proof[1:]
+        invalid_status, invalid_response = self.client.post_json(
+            "/register",
+            {
+                "pin": self.device_pin,
+                "nonce": secrets.token_hex(16),
+                "proof": invalid_proof,
+                "timestamp": int(time.time()),
+            },
+        )
+        self.assertEqual(
+            invalid_status,
+            401,
+            f"invalid registration proof returned HTTP {invalid_status}: {invalid_response}",
+        )
+        self.assertEqual(invalid_response.get("error"), "invalid registration proof")
+
+    def test_03_led_start_stop_blink_stop(self) -> None:
+        """Register before each authenticated LED start, stop, blink, and stop request."""
+        actions = (
+            ("start", True, "solid"),
+            ("stop", False, "off"),
+            ("blink", True, "blink"),
+            ("stop", False, "off"),
+        )
+
+        for action, enabled, mode in actions:
+            nonce = secrets.token_hex(16)
+            register_timestamp = int(time.time())
+            proof = hmac.new(
+                self.device_pin.encode("utf-8"),
+                nonce.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            register_status, register_response = self.client.post_json(
+                "/register",
+                {
+                    "pin": self.device_pin,
+                    "nonce": nonce,
+                    "proof": proof,
+                    "timestamp": register_timestamp,
+                },
+            )
+            self.assertEqual(
+                register_status,
+                200,
+                f"registration before LED {action} returned HTTP "
+                f"{register_status}: {register_response}",
+            )
+            self.assertIs(register_response.get("registered"), True)
+            session_token = register_response.get("sessionToken")
+            self.assertIsInstance(session_token, str)
+            self.assertTrue(session_token)
+
+            request_timestamp = str(int(time.time()))
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                f"{session_token}:{request_timestamp}".encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            led_status, led_response = self.client.post_json(
+                "/led",
+                {
+                    "enabled": enabled,
+                    "count": 10,
+                    "mode": mode,
+                    "brightness": 80,
+                    "intervalMillis": 500,
+                    "red": 255,
+                    "green": 40,
+                    "blue": 0,
+                },
+                headers={
+                    "X-TIMESTAMP": request_timestamp,
+                    "X-API-KEY": api_key,
+                },
+            )
+            self.assertEqual(
+                led_status,
+                200,
+                f"LED {action} returned HTTP {led_status}: {led_response}",
+            )
+            self.assertIs(led_response.get("updated"), True)
+            self.assertIs(led_response.get("enabled"), enabled)
+            self.assertEqual(led_response.get("mode"), mode)
+
+    def test_04_camera_accepts_valid_and_rejects_invalid_parameters(self) -> None:
+        """Check valid and invalid camera settings, then restore the initial settings."""
+        camera = self.client.get_status().get("camera")
+        self.assertIsInstance(camera, dict, "/status camera must be a JSON object")
+        defaults = {
+            "resolution": camera.get("resolution"),
+            "framebuffers": camera.get("framebuffers"),
+            "jpegquality": camera.get("jpegquality"),
+        }
+        self.assertIn(defaults["resolution"], ("QQVGA", "QVGA", "VGA", "SVGA", "XGA", "SXGA", "UXGA"))
+        self.assertIsInstance(defaults["framebuffers"], int)
+        self.assertIn(defaults["framebuffers"], range(1, 5))
+        self.assertIsInstance(defaults["jpegquality"], int)
+        self.assertIn(defaults["jpegquality"], range(12, 21))
+
+        valid_quality = 19 if defaults["jpegquality"] != 19 else 20
+        valid_settings = {
+            **defaults,
+            "jpegquality": valid_quality,
+        }
+
+        def configure_camera(settings: dict[str, object]) -> tuple[int, dict[str, object]]:
+            nonce = secrets.token_hex(16)
+            register_timestamp = int(time.time())
+            proof = hmac.new(
+                self.device_pin.encode("utf-8"),
+                nonce.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            register_status, register_response = self.client.post_json(
+                "/register",
+                {
+                    "pin": self.device_pin,
+                    "nonce": nonce,
+                    "proof": proof,
+                    "timestamp": register_timestamp,
+                },
+            )
+            self.assertEqual(
+                register_status,
+                200,
+                f"registration before camera request returned HTTP "
+                f"{register_status}: {register_response}",
+            )
+            session_token = register_response.get("sessionToken")
+            self.assertIsInstance(session_token, str)
+            self.assertTrue(session_token)
+
+            request_timestamp = str(int(time.time()))
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                f"{session_token}:{request_timestamp}".encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            return self.client.post_json(
+                "/camera",
+                settings,
+                headers={
+                    "X-TIMESTAMP": request_timestamp,
+                    "X-API-KEY": api_key,
+                },
+            )
+
+        try:
+            valid_status, valid_response = configure_camera(valid_settings)
+            self.assertEqual(
+                valid_status,
+                200,
+                f"valid camera settings returned HTTP "
+                f"{valid_status}: {valid_response}",
+            )
+            self.assertIs(valid_response.get("configured"), True)
+            self.assertEqual(valid_response.get("camera"), valid_settings)
+            self._wait_for_camera_capture("after applying valid settings")
+
+            invalid_settings = {
+                **valid_settings,
+                "jpegquality": 21,
+            }
+            invalid_status, invalid_response = configure_camera(invalid_settings)
+            self.assertEqual(
+                invalid_status,
+                400,
+                f"invalid camera settings returned HTTP "
+                f"{invalid_status}: {invalid_response}",
+            )
+            self.assertEqual(
+                invalid_response.get("error"),
+                "framebuffers must be 1..4 and jpegquality 12..20",
+            )
+        finally:
+            restore_status, restore_response = configure_camera(defaults)
+            self.assertEqual(
+                restore_status,
+                200,
+                f"failed to restore initial camera settings: {restore_response}",
+            )
+            self.assertEqual(restore_response.get("camera"), defaults)
+            self._wait_for_camera_capture("after restoring initial settings")
+
+    def test_05_stream_displays_mjpeg_frames_for_at_least_5_seconds(self) -> None:
+        """Register and display decoded MJPEG frames in an OpenCV window for five seconds."""
+        try:
+            import cv2
+            import numpy as np
+        except ImportError as error:
+            self.fail(
+                "test 5 requires OpenCV and NumPy; install them with "
+                "'python -m pip install -r requirements-test.txt': "
+                f"{error}"
+            )
+
+        nonce = secrets.token_hex(16)
+        register_timestamp = int(time.time())
         proof = hmac.new(
             self.device_pin.encode("utf-8"),
             nonce.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        payload = {
-            "pin": self.device_pin,
-            "nonce": nonce,
-            "proof": proof,
-            "timestamp": timestamp,
-        }
-        body = json.dumps(payload)
-        url = f"{self.base_url.rstrip('/')}/register"
-        request = Request(
-            url,
-            data=body.encode("utf-8"),
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
+        register_status, register_response = self.client.post_json(
+            "/register",
+            {
+                "pin": self.device_pin,
+                "nonce": nonce,
+                "proof": proof,
+                "timestamp": register_timestamp,
             },
         )
-        self._log_request(request, body)
-        try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
-                status_code = response.status
-                response_headers = response.headers
-                response_body = response.read().decode("utf-8")
-        except HTTPError as error:
-            error_body = error.read().decode("utf-8", errors="replace")
-            self._log_response(error.code, error.headers, error_body)
-            raise AssertionError(f"POST {url} returned HTTP {error.code}") from error
-        except URLError as error:
-            raise AssertionError(f"device is unreachable at {url}: {error.reason}") from error
-        except TimeoutError as error:
-            raise AssertionError(f"request to {url} timed out") from error
-
-        self._log_response(status_code, response_headers, response_body)
-        if status_code != 200:
-            raise AssertionError(f"POST {url} returned HTTP {status_code}")
-        try:
-            response = json.loads(response_body)
-        except json.JSONDecodeError as error:
-            raise AssertionError(f"POST {url} returned invalid JSON: {response_body!r}") from error
-        if not isinstance(response, dict):
-            raise AssertionError("/register response must be a JSON object")
-        return response
-
-    def set_led(
-        self,
-        session_token: str,
-        api_key: str,
-        timestamp: str | None = None,
-        enable: bool = True,
-    ) -> tuple[int, dict]:
-        """Call POST /led and return its HTTP status and JSON response."""
-        timestamp = timestamp or str(int(time.time()))
-        payload = {
-            "enabled": enable,
-            "count": 10,
-            "mode": "solid" if enable else "off",
-            "brightness": 80,
-            "red": 255,
-            "green": 40,
-            "blue": 0,
-        }
-        body = json.dumps(payload)
-        url = f"{self.base_url.rstrip('/')}/led"
-        request = Request(
-            url,
-            data=body.encode("utf-8"),
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "X-TIMESTAMP": timestamp,
-                "X-API-KEY": api_key,
-            },
+        self.assertEqual(
+            register_status,
+            200,
+            f"registration before stream returned HTTP "
+            f"{register_status}: {register_response}",
         )
-        self._log_request(request, body)
-        parsed_url = urlsplit(url)
-        connection = http.client.HTTPConnection(
-            parsed_url.hostname,
-            parsed_url.port or 80,
-            timeout=self.timeout_seconds,
-        )
+        self.assertIs(register_response.get("registered"), True)
+        session_token = register_response.get("sessionToken")
+        self.assertIsInstance(session_token, str)
+        self.assertTrue(session_token)
+
+        minimum_duration = 5.0
+        window_name = "ESP32-CAM MJPEG stream"
+        response: http.client.HTTPResponse | None = None
+        frame_count = 0
+
         try:
-            path = parsed_url.path or "/"
-            if parsed_url.query:
-                path += f"?{parsed_url.query}"
-            connection.request(
-                "POST",
-                path,
-                body=body,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "X-TIMESTAMP": timestamp,
-                    "X-API-KEY": api_key,
-                },
+            self._wait_for_camera_capture("before starting the stream")
+            request_timestamp = str(int(time.time()))
+            api_key = hmac.new(
+                session_token.encode("utf-8"),
+                f"{session_token}:{request_timestamp}".encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            response = self.client.get_stream(request_timestamp, api_key)
+            self.assertEqual(
+                response.status,
+                200,
+                f"GET /stream returned HTTP {response.status}",
             )
-            response = connection.getresponse()
-            status_code = response.status
-            response_headers = response.headers
-            response_body = response.read().decode("utf-8", errors="replace")
-        except (OSError, TimeoutError) as error:
-            raise AssertionError(f"device is unreachable at {url}: {error}") from error
-        finally:
-            self._force_close_connection(connection)
-
-        self._log_response(status_code, response_headers, response_body)
-
-        try:
-            response = json.loads(response_body)
-        except json.JSONDecodeError as error:
-            raise AssertionError(f"POST {url} returned invalid JSON: {response_body!r}") from error
-        if not isinstance(response, dict):
-            raise AssertionError("/led response must be a JSON object")
-        return status_code, response
-
-    def set_camera(
-        self,
-        api_key: str,
-        timestamp: str,
-        payload: dict[str, object],
-    ) -> tuple[int, dict]:
-        """Call authenticated POST /camera and return its JSON response."""
-        body = json.dumps(payload)
-        url = f"{self.base_url.rstrip('/')}/camera"
-        request = Request(
-            url,
-            data=body.encode("utf-8"),
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "X-TIMESTAMP": timestamp,
-                "X-API-KEY": api_key,
-            },
-        )
-        self._log_request(request, body)
-        parsed_url = urlsplit(url)
-        connection = http.client.HTTPConnection(
-            parsed_url.hostname,
-            parsed_url.port or 80,
-            timeout=self.timeout_seconds,
-        )
-        try:
-            path = parsed_url.path or "/"
-            if parsed_url.query:
-                path += f"?{parsed_url.query}"
-            connection.request(
-                "POST",
-                path,
-                body=body,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "X-TIMESTAMP": timestamp,
-                    "X-API-KEY": api_key,
-                },
-            )
-            response = connection.getresponse()
-            status_code = response.status
-            response_headers = response.headers
-            response_body = response.read().decode("utf-8", errors="replace")
-        except (OSError, TimeoutError) as error:
-            raise AssertionError(f"device is unreachable at {url}: {error}") from error
-        finally:
-            self._force_close_connection(connection)
-
-        self._log_response(status_code, response_headers, response_body)
-        try:
-            response_payload = json.loads(response_body)
-        except json.JSONDecodeError as error:
-            raise AssertionError(
-                f"POST {url} returned invalid JSON: {response_body!r}"
-            ) from error
-        if not isinstance(response_payload, dict):
-            raise AssertionError("/camera response must be a JSON object")
-        return status_code, response_payload
-
-    def open_stream(
-        self, api_key: str, timestamp: str
-    ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
-        """Open /stream and leave its connection available to the caller."""
-        url = f"{self.base_url.rstrip('/')}/stream"
-        parsed_url = urlsplit(url)
-        connection = http.client.HTTPConnection(
-            parsed_url.hostname,
-            parsed_url.port or 80,
-            timeout=self.timeout_seconds,
-        )
-        request = Request(
-            url,
-            method="GET",
-            headers={
-                "Accept": "multipart/x-mixed-replace",
-                "X-TIMESTAMP": timestamp,
-                "X-API-KEY": api_key,
-            },
-        )
-        self._log_request(request)
-        path = parsed_url.path or "/"
-        if parsed_url.query:
-            path += f"?{parsed_url.query}"
-        try:
-            connection.request(
-                "GET",
-                path,
-                headers={
-                    "Accept": "multipart/x-mixed-replace",
-                    "X-TIMESTAMP": timestamp,
-                    "X-API-KEY": api_key,
-                },
-            )
-            return connection, connection.getresponse()
-        except (OSError, TimeoutError) as error:
-            self._force_close_connection(connection)
-            raise AssertionError(f"device is unreachable at {url}: {error}") from error
-
-    def stream_probe(self, api_key: str, timestamp: str) -> tuple[int, object, bytes]:
-        """Open /stream, read its headers and a small first-frame probe."""
-        connection, response = self.open_stream(api_key, timestamp)
-        try:
-            status_code = response.status
-            response_headers = response.headers
-            response_body = (
-                self.read_stream_probe(response)
-                if status_code == 200
-                else response.read()
-            )
-        except (OSError, TimeoutError) as error:
-            raise AssertionError(f"stream probe failed: {error}") from error
-        finally:
-            self._force_close_connection(connection)
-
-        body_text = response_body.decode("utf-8", errors="replace")
-        self._log_response(status_code, response_headers, body_text)
-        return status_code, response_headers, response_body
-
-    @staticmethod
-    def read_stream_probe(response: http.client.HTTPResponse) -> bytes:
-        """Read until the first multipart boundary without waiting for a full buffer."""
-        body = bytearray()
-        while len(body) < 4096 and b"--frame" not in body:
-            chunk = response.read1(min(512, 4096 - len(body)))
-            if not chunk:
-                break
-            body.extend(chunk)
-        return bytes(body)
-
-    def measure_stream_throughput(
-        self, api_key: str, timestamp: str, duration_seconds: int = 10
-    ) -> StreamThroughput:
-        """Measure received HTTP bytes and JPEG frames per second for at least 10 seconds."""
-        if duration_seconds < 10:
-            raise ValueError("stream throughput measurement must last at least 10 seconds")
-
-        connection = None
-        phase = "opening stream"
-        try:
-            connection, response = self.open_stream(api_key, timestamp)
-            if response.status != 200:
-                body = response.read(512)
-                raise AssertionError(
-                    f"GET /stream returned HTTP {response.status}: {body!r}"
-                )
             content_type = response.headers.get("Content-Type", "")
-            if "multipart/x-mixed-replace" not in content_type:
-                raise AssertionError(f"unexpected stream Content-Type: {content_type!r}")
-            if connection.sock is not None:
-                connection.sock.settimeout(
-                    max(self.timeout_seconds, duration_seconds + self.timeout_seconds)
-                )
+            self.assertIn(
+                "multipart/x-mixed-replace",
+                content_type.lower(),
+                f"unexpected stream Content-Type: {content_type!r}",
+            )
+            started_at = time.monotonic()
+            print(
+                f"Stream MJPEG attivo per almeno {minimum_duration:.0f} secondi; "
+                "premere Ctrl+C per interrompere.",
+                flush=True,
+            )
 
-            phase = "reading stream"
-            start_time = time.monotonic()
-            deadline = start_time + duration_seconds
-            total_bytes = 0
-            frame_count = 0
-            frames_by_second = [0] * duration_seconds
             frame_buffer = bytearray()
-
+            deadline = started_at + minimum_duration
             while time.monotonic() < deadline:
-                chunk = response.read1(4096)
+                try:
+                    chunk = response.read1(4096)
+                except TimeoutError as error:
+                    elapsed = time.monotonic() - started_at
+                    self.fail(
+                        f"MJPEG stream stalled while reading: no response data "
+                        f"within {self.timeout_seconds:g}s; elapsed={elapsed:.2f}s, "
+                        f"decoded_frames={frame_count}: {error}"
+                    )
                 if not chunk:
                     break
-                total_bytes += len(chunk)
                 frame_buffer.extend(chunk)
 
                 while True:
@@ -418,627 +544,83 @@ class DeviceHttpClient:
                     if end_index < 0:
                         break
 
+                    jpeg_frame = bytes(frame_buffer[:end_index + 2])
                     del frame_buffer[:end_index + 2]
+                    image = cv2.imdecode(
+                        np.frombuffer(jpeg_frame, dtype=np.uint8),
+                        cv2.IMREAD_COLOR,
+                    )
+                    self.assertIsNotNone(image, "received frame is not a valid JPEG")
+                    cv2.imshow(window_name, image)
+                    cv2.waitKey(1)
                     frame_count += 1
-                    second = int(time.monotonic() - start_time)
-                    if second < duration_seconds:
-                        frames_by_second[second] += 1
+                    elapsed = time.monotonic() - started_at
+                    height, width = image.shape[:2]
+                    print(
+                        f"Frame {frame_count:04d} | {elapsed:.2f}s | "
+                        f"{width}x{height}",
+                        flush=True,
+                    )
 
-            elapsed_seconds = time.monotonic() - start_time
-            if elapsed_seconds < duration_seconds:
-                raise AssertionError(
-                    f"stream ended after {elapsed_seconds:.2f}s; "
-                    f"expected at least {duration_seconds}s"
-                )
-            return StreamThroughput(
-                elapsed_seconds=elapsed_seconds,
-                total_bytes=total_bytes,
-                frame_count=frame_count,
-                frames_by_second=tuple(frames_by_second),
+            elapsed = time.monotonic() - started_at
+            self.assertGreaterEqual(
+                elapsed,
+                minimum_duration,
+                f"stream ended after {elapsed:.2f}s; expected at least "
+                f"{minimum_duration:.0f}s",
             )
-        except (OSError, TimeoutError) as error:
-            raise AssertionError(
-                f"stream throughput measurement failed while {phase}: {error}"
-            ) from error
-        finally:
-            if connection is not None:
-                self._force_close_connection(connection)
-
-    def stream_for_duration(self, api_key: str, timestamp: str, duration_seconds: int = 5) -> None:
-        """Read the MJPEG stream for a fixed duration and log received frames."""
-        connection, response = self.open_stream(api_key, timestamp)
-        try:
-            if response.status != 200:
-                body = response.read(512)
-                raise AssertionError(
-                    f"GET /stream returned HTTP {response.status}: {body!r}"
-                )
-
-            content_type = response.headers.get("Content-Type", "sconosciuto")
-            if "multipart/x-mixed-replace" not in content_type:
-                raise AssertionError(f"unexpected stream Content-Type: {content_type!r}")
-            self._print(f"Stream connesso. Content-Type: {content_type}")
-            start_time = time.monotonic()
-            deadline = start_time + duration_seconds
-            last_log_time = start_time
-            buffer = b""
-            frame_count = 0
-            previous_hash = None
-
-            if connection.sock is not None:
-                connection.sock.settimeout(
-                    max(self.timeout_seconds, duration_seconds + self.timeout_seconds)
-                )
-
-            while time.monotonic() < deadline:
-                chunk = response.read1(1024)
-                if not chunk:
-                    break
-                buffer += chunk
-
-                while True:
-                    start_idx = buffer.find(b"\xff\xd8")
-                    if start_idx < 0:
-                        if len(buffer) > 1:
-                            buffer = buffer[-1:]
-                        break
-                    if start_idx:
-                        buffer = buffer[start_idx:]
-                    end_idx = buffer.find(b"\xff\xd9", 2)
-                    if end_idx < 0:
-                        break
-
-                    frame_data = buffer[:end_idx + 2]
-                    buffer = buffer[end_idx + 2:]
-                    frame_count += 1
-                    frame_hash = hashlib.md5(frame_data).hexdigest()
-                    is_different = frame_hash != previous_hash
-                    previous_hash = frame_hash
-
-                    current_time = time.monotonic()
-                    if current_time - last_log_time >= 1.0 or frame_count == 1:
-                        elapsed = int(current_time - start_time)
-                        self._print(
-                            f"[STREAM LOG - {elapsed}s] "
-                            f"Tipo: image/jpeg | Dimensione: {len(frame_data)} bytes | "
-                            f"Frame differente dal precedente: {is_different} "
-                            f"(Hash: {frame_hash[:8]})"
-                        )
-                        last_log_time = current_time
-
-            elapsed = time.monotonic() - start_time
-            if elapsed < duration_seconds:
-                raise AssertionError(
-                    f"stream ended after {elapsed:.2f}s; expected {duration_seconds}s"
-                )
-            if frame_count == 0:
-                raise AssertionError("stream delivered no complete JPEG frames")
-            self._print(
-                f"Stream completato. Ricevuti {frame_count} frame totali "
-                f"in {elapsed:.2f} secondi."
-            )
-        except (OSError, TimeoutError) as error:
-            raise AssertionError(f"stream logging failed: {error}") from error
-        finally:
-            self._force_close_connection(connection)
-
-class DeviceHttpTest(unittest.TestCase):
-    """Smoke tests proving that the ESP32-CAM service exists and is healthy."""
-
-    client = DeviceHttpClient(
-        base_url=os.getenv("ESP32_DEVICE_URL", "http://192.168.4.1"),
-        timeout_seconds=float(os.getenv("ESP32_HTTP_TIMEOUT", "5")),
-    )
-    registration_response: dict = {}
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        """Create one session for the suite and reuse it across authenticated tests."""
-        cls.registration_response = cls.client.register()
-
-    def require_camera_ready(self) -> None:
-        """Skip stream tests when the device reports that its camera cannot stream."""
-        camera = self.client.get_status().get("camera")
-        self.assertIsInstance(camera, dict, "/status camera must be a JSON object")
-        self.assertIn("ready", camera)
-        self.assertIn("reconfiguring", camera)
-        if not camera["ready"] or camera["reconfiguring"]:
-            self.skipTest(
-                "camera is unavailable for streaming "
-                f"(ready={camera['ready']}, reconfiguring={camera['reconfiguring']})"
-            )
-
-    def test_01_device_exists(self) -> None:
-        """The board must answer GET /status with the expected device contract."""
-        status = self.client.get_status()
-
-        self.assertEqual(status.get("tipo"), "ESP32-CAM")
-        self.assertTrue(status.get("running"), "device reports running=false")
-        self.assertIn("version", status)
-        self.assertIsInstance(status.get("buildDateTime"), str)
-        self.assertRegex(
-            status["buildDateTime"],
-            r"^[A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2}$",
-        )
-        self.assertIn("serial", status)
-        self.assertIsInstance(status.get("ram"), dict)
-        self.assertIsInstance(status.get("wifi"), dict)
-        self.assertIsInstance(status.get("camera"), dict)
-        self.assertIsInstance(status.get("battery"), dict)
-        self.assertIsInstance(status.get("ledStatus"), dict)
-        self.assertIsInstance(status.get("internalLedStatus"), dict)
-
-    def test_02_register(self) -> None:
-        """The board must accept a fresh nonce and return a session token."""
-        response = self.registration_response
-
-        self.assertTrue(response.get("registered"))
-        self.assertIsInstance(response.get("sessionToken"), str)
-        self.assertGreater(len(response["sessionToken"]), 0)
-        self.assertIsInstance(response.get("timestamp"), int)
-
-    def test_03_register_invalidates_previous_session(self) -> None:
-        """A new registration must invalidate the previous session token."""
-        previous_token = self.registration_response["sessionToken"]
-        new_registration = self.client.register()
-        new_token = new_registration["sessionToken"]
-        self.assertNotEqual(previous_token, new_token)
-
-        old_timestamp = str(int(time.time()))
-        old_message = f"{previous_token}:{old_timestamp}"
-        old_api_key = hmac.new(
-            previous_token.encode("utf-8"),
-            old_message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        old_status, old_response = self.client.set_led(
-            previous_token, old_api_key, old_timestamp
-        )
-        self.assertEqual(old_status, 401, f"old session was accepted: {old_response}")
-
-        new_timestamp = str(int(time.time()))
-        new_message = f"{new_token}:{new_timestamp}"
-        new_api_key = hmac.new(
-            new_token.encode("utf-8"),
-            new_message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        new_status, new_response = self.client.set_led(
-            new_token, new_api_key, new_timestamp
-        )
-        self.assertIn(new_status, (200, 409), f"new session rejected: {new_response}")
-    
-    def test_04_led_authentication(self) -> None:
-        """POST /led must reject bad HMAC and accept a valid session signature."""
-        registration = self.client.register()
-        session_token = registration["sessionToken"]
-
-        # Test HMAC non valido
-        invalid_timestamp = str(int(time.time()))
-        invalid_status, invalid_response = self.client.set_led(
-            session_token, "0" * 64, invalid_timestamp, enable=True
-        )
-        self.assertEqual(
-            invalid_status,
-            401,
-            f"invalid API key returned HTTP {invalid_status}: {invalid_response}",
-        )
-        self.assertIn("error", invalid_response, f"unexpected response: {invalid_response}")
-
-        # 1. Accensione LED (enable=True)
-        on_timestamp = str(int(time.time()))
-        on_message = f"{session_token}:{on_timestamp}"
-        on_api_key = hmac.new(
-            session_token.encode("utf-8"),
-            on_message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        on_status, on_response = self.client.set_led(
-            session_token, on_api_key, on_timestamp, enable=True
-        )
-        self.assertIn(
-            on_status,
-            (200, 409),
-            f"valid API key returned HTTP {on_status}: {on_response}",
-        )
-        if on_status == 200:
-            self.assertTrue(on_response.get("updated"))
-        else:
-            self.assertEqual(on_response.get("error"), "led strip is not configured")
-
-        # Verifica stato LED e attesa di 2 secondi se è ON
-        status = self.client.get_status()
-        led_status = status.get("ledStatus", {})
-        if led_status.get("enabled") or led_status.get("on") or led_status.get("state") == "on":
-            time.sleep(2)
-
-        # 2. Spegnimento LED (enable=False)
-        off_timestamp = str(int(time.time()))
-        off_message = f"{session_token}:{off_timestamp}"
-        off_api_key = hmac.new(
-            session_token.encode("utf-8"),
-            off_message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        off_status, off_response = self.client.set_led(
-            session_token, off_api_key, off_timestamp, enable=False
-        )
-        self.assertIn(
-            off_status,
-            (200, 409),
-            f"valid API key returned HTTP {off_status}: {off_response}",
-        )
-        if off_status == 200:
-            self.assertTrue(off_response.get("updated"))
-        else:
-            self.assertEqual(off_response.get("error"), "led strip is not configured")
-
-    def test_56_stream_authentication(self) -> None:
-        """GET /stream must require auth and return the MJPEG stream when valid."""
-        registration = self.client.register()
-        session_token = registration["sessionToken"]
-        invalid_timestamp = str(int(time.time()))
-
-        invalid_status, _, invalid_body = self.client.stream_probe(
-            "0" * 64, invalid_timestamp
-        )
-        self.assertEqual(
-            invalid_status,
-            401,
-            f"invalid API key returned HTTP {invalid_status}: {invalid_body!r}",
-        )
-
-        self.require_camera_ready()
-        valid_timestamp = str(int(time.time()))
-        message = f"{session_token}:{valid_timestamp}"
-        valid_api_key = hmac.new(
-            session_token.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        valid_status, headers, first_bytes = self.client.stream_probe(
-            valid_api_key, valid_timestamp
-        )
-        self.assertEqual(
-            valid_status,
-            200,
-            f"valid API key returned HTTP {valid_status}: {first_bytes!r}",
-        )
-        content_type = headers.get("Content-Type", "")
-        self.assertIn("multipart/x-mixed-replace", content_type)
-        self.assertIn(b"--frame", first_bytes)
-
-    def test_58_stream_is_concurrent_with_status(self) -> None:
-        """A new stream must replace the current stream without blocking status."""
-        self.require_camera_ready()
-        session_token = self.client.register()["sessionToken"]
-
-        def signed_headers() -> tuple[str, str]:
-            timestamp = str(int(time.time()))
-            message = f"{session_token}:{timestamp}"
-            api_key = hmac.new(
-                session_token.encode("utf-8"),
-                message.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            return timestamp, api_key
-
-        stream_connection = None
-        second_connection = None
-        try:
-            timestamp, api_key = signed_headers()
-            stream_connection, stream_response = self.client.open_stream(api_key, timestamp)
-            self.assertEqual(
-                stream_response.status,
-                200,
-                f"stream returned HTTP {stream_response.status}",
-            )
-            self.assertIn(
-                "multipart/x-mixed-replace",
-                stream_response.headers.get("Content-Type", ""),
-            )
-            first_bytes = self.client.read_stream_probe(stream_response)
-            self.assertIn(b"--frame", first_bytes)
-
-            status = self.client.get_status()
-            self.assertTrue(status.get("running"), "status did not complete during stream")
-
-            second_timestamp, second_api_key = signed_headers()
-            second_connection, second_response = self.client.open_stream(
-                second_api_key, second_timestamp
-            )
-            self.assertEqual(
-                second_response.status,
-                200,
-                f"second stream returned HTTP {second_response.status}",
-            )
-            self.assertIn(
-                "multipart/x-mixed-replace",
-                second_response.headers.get("Content-Type", ""),
-            )
-            second_bytes = self.client.read_stream_probe(second_response)
-            self.assertIn(b"--frame", second_bytes)
-
-            if stream_connection.sock is not None:
-                stream_connection.sock.settimeout(
-                    min(self.client.timeout_seconds, 1.0)
-                )
-            close_deadline = time.monotonic() + self.client.timeout_seconds
-            while time.monotonic() < close_deadline:
-                try:
-                    previous_bytes = stream_response.read1(4096)
-                except socket.timeout:
-                    self.fail("previous stream stayed open after the second stream started")
-                except (OSError, http.client.HTTPException):
-                    break
-                if not previous_bytes:
-                    break
-            else:
-                self.fail("previous stream stayed open after the second stream started")
-        finally:
-            if second_connection is not None:
-                self.client._force_close_connection(second_connection)
-            if stream_connection is not None:
-                self.client._force_close_connection(stream_connection)
-
-    def test_13_battery_status_contract(self) -> None:
-        """Battery status must expose measurement and charge-detection state."""
-        battery = self.client.get_status()["battery"]
-        for field in ("present", "charging", "full", "chargeDetection"):
-            self.assertIn(field, battery)
-        self.assertIn("levelPercent", battery)
-        self.assertIn("voltageMv", battery)
-        self.assertIn("sampleIntervalMillis", battery)
-        self.assertIn("averageSamples", battery)
-        self.assertIn("samplesCollected", battery)
-
-
-
-    def test_12_led_authentication_OFF(self) -> None:
-        """POST /led must reject bad HMAC and accept a valid session signature."""
-        registration = self.client.register()
-        session_token = registration["sessionToken"]
-
-        # Test HMAC non valido
-        invalid_timestamp = str(int(time.time()))
-        invalid_status, invalid_response = self.client.set_led(
-            session_token, "0" * 64, invalid_timestamp, enable=True
-        )
-        self.assertEqual(
-            invalid_status,
-            401,
-            f"invalid API key returned HTTP {invalid_status}: {invalid_response}",
-        )
-        self.assertIn("error", invalid_response, f"unexpected response: {invalid_response}")
-
-        # 2. Spegnimento LED (enable=False)
-        off_timestamp = str(int(time.time()))
-        off_message = f"{session_token}:{off_timestamp}"
-        off_api_key = hmac.new(
-            session_token.encode("utf-8"),
-            off_message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        off_status, off_response = self.client.set_led(
-            session_token, off_api_key, off_timestamp, enable=False
-        )
-        self.assertIn(
-            off_status,
-            (200, 409),
-            f"valid API key returned HTTP {off_status}: {off_response}",
-        )
-        if off_status == 200:
-            self.assertTrue(off_response.get("updated"))
-        else:
-            self.assertEqual(off_response.get("error"), "led strip is not configured")
-
-
-
-    def test_10_internal_led_status_contract(self) -> None:
-        """Internal LED status must state whether it is colorable and its mode."""
-       
-        
-        internal_led = self.client.get_status()["internalLedStatus"]
-        self.assertIn("present", internal_led)
-        self.assertIn("colorable", internal_led)
-        self.assertFalse(internal_led["colorable"])
-        self.assertIn(internal_led.get("state"), ("off", "lowBattery", "charging", "full"))
-
-    def test_57_stream_logging_for_5_seconds(self) -> None:
-        """Check that the stream closes and is released after five seconds."""
-        self.require_camera_ready()
-        session_token = self.client.register()["sessionToken"]
-        timestamp = str(int(time.time()))
-        message = f"{session_token}:{timestamp}"
-        api_key = hmac.new(
-            session_token.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-        self.client.stream_for_duration(api_key, timestamp, duration_seconds=5)
-        release_deadline = time.monotonic() + self.client.timeout_seconds
-        while True:
-            camera = self.client.get_status()["camera"]
-            if not camera["streamActive"]:
-                break
-            if time.monotonic() >= release_deadline:
-                self.fail("camera stream remained active after test_57 closed it")
-            time.sleep(0.1)
-
-    def test_59_stream_wifi_throughput_for_at_least_10_seconds(self) -> None:
-        """Misura frame JPEG/s e byte/s ricevuti via Wi-Fi per almeno 10 secondi."""
-        self.require_camera_ready()
-        session_token = self.client.register()["sessionToken"]
-        timestamp = str(int(time.time()))
-        message = f"{session_token}:{timestamp}"
-        api_key = hmac.new(
-            session_token.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-        measurement = self.client.measure_stream_throughput(
-            api_key, timestamp, duration_seconds=10
-        )
-        self.assertGreaterEqual(measurement.elapsed_seconds, 10.0)
-        self.assertGreater(measurement.total_bytes, 0, "stream delivered no data")
-        self.assertGreater(measurement.frame_count, 0, "stream delivered no JPEG frames")
-
-        self.client._print(
-            f"Throughput Wi-Fi: {measurement.frame_count} frame in "
-            f"{measurement.elapsed_seconds:.2f}s "
-            f"({measurement.frame_count / measurement.elapsed_seconds:.2f} frame/s), "
-            f"{measurement.total_bytes} byte HTTP "
-            f"({measurement.total_bytes / measurement.elapsed_seconds:.2f} byte/s)"
-        )
-        for second, frame_count in enumerate(measurement.frames_by_second):
-            self.client._print(f"  secondo {second + 1}: {frame_count} frame")
-
-    def test_60_camera_accepts_current_status_configuration(self) -> None:
-        """POST /camera must accept the current values reported by /status unchanged."""
-        session_token = self.client.register()["sessionToken"]
-        camera = self.client.get_status()["camera"]
-        payload = {
-            "resolution": camera["resolution"],
-            "framebuffers": camera["framebuffers"],
-            "jpegquality": camera["jpegquality"],
-        }
-        timestamp = str(int(time.time()))
-        message = f"{session_token}:{timestamp}"
-        api_key = hmac.new(
-            session_token.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-        status_code, response = self.client.set_camera(api_key, timestamp, payload)
-
-        self.assertEqual(
-            status_code, 200, f"POST /camera returned HTTP {status_code}: {response}"
-        )
-        self.assertTrue(response.get("configured"))
-        self.assertFalse(response.get("changed"))
-        self.assertEqual(response.get("camera"), payload)
-        current_camera = self.client.get_status()["camera"]
-        for field, expected in payload.items():
-            self.assertEqual(current_camera.get(field), expected)
-    
-    def test_61_camera_reconfiguration_keeps_streaming(self) -> None:
-        """Changed camera quality and buffer count must still deliver a 10s stream."""
-        self.require_camera_ready()
-        session_token = self.client.register()["sessionToken"]
-        original = self.client.get_status()["camera"]
-        original_config = {
-            "resolution": original["resolution"],
-            "framebuffers": original["framebuffers"],
-            "jpegquality": original["jpegquality"],
-        }
-        current_framebuffers = original_config["framebuffers"]
-        current_quality = original_config["jpegquality"]
-        self.assertIn(current_framebuffers, range(1, 5))
-        self.assertIn(current_quality, range(12, 21))
-
-        changed_config = {
-            "resolution": original_config["resolution"],
-            "framebuffers": (
-                current_framebuffers + 1 if current_framebuffers < 4 else 3
-            ),
-            "jpegquality": current_quality + 1 if current_quality < 20 else 19,
-        }
-
-        def configure(payload: dict[str, object]) -> tuple[int, dict]:
-            timestamp = str(int(time.time()))
-            message = f"{session_token}:{timestamp}"
-            api_key = hmac.new(
-                session_token.encode("utf-8"),
-                message.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            return self.client.set_camera(api_key, timestamp, payload)
-
-        try:
-            status_code, response = configure(changed_config)
-            self.assertEqual(
-                status_code, 200, f"POST /camera returned HTTP {status_code}: {response}"
-            )
-            self.assertTrue(response.get("configured"))
-            self.assertTrue(response.get("changed"))
-            self.assertEqual(response.get("camera"), changed_config)
-
-            current_camera = self.client.get_status()["camera"]
-            for field, expected in changed_config.items():
-                self.assertEqual(current_camera.get(field), expected)
-
-            timestamp = str(int(time.time()))
-            message = f"{session_token}:{timestamp}"
-            api_key = hmac.new(
-                session_token.encode("utf-8"),
-                message.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            measurement = self.client.measure_stream_throughput(
-                api_key, timestamp, duration_seconds=10
-            )
-            self.assertGreaterEqual(measurement.elapsed_seconds, 10.0)
-            self.assertGreater(measurement.total_bytes, 0, "stream delivered no data")
-            self.assertGreater(
-                measurement.frame_count, 0, "stream delivered no JPEG frames"
+            self.assertGreater(frame_count, 0, "stream delivered no valid JPEG frames")
+            print(
+                f"Stream terminato: {frame_count} frame in {elapsed:.2f}s.",
+                flush=True,
             )
         finally:
-            restore_status, restore_response = configure(original_config)
-            self.assertEqual(
-                restore_status,
-                200,
-                f"failed to restore camera configuration: {restore_response}",
-            )
-            restored_camera = self.client.get_status()["camera"]
-            for field, expected in original_config.items():
-                self.assertEqual(restored_camera.get(field), expected)
+            try:
+                if response is not None:
+                    response.close()
+            finally:
+                self.client.close()
+                cv2.destroyAllWindows()
 
+
+def setUpModule() -> None:
+    """Connect to the ESP32 Wi-Fi once before running this module's test suite."""
+    print("\n===== CONNECT ESP32 WI-FI =====", flush=True)
+    DeviceHttpTest._run_wifi_action("ON")
+
+
+def tearDownModule() -> None:
+    """Disconnect from the ESP32 Wi-Fi once after all module tests finish."""
+    print("\n===== DISCONNECT ESP32 WI-FI =====", flush=True)
+    DeviceHttpTest._run_wifi_action("OFF")
 
 
 class SummaryTestResult(unittest.TextTestResult):
-    """Test result that keeps a compact report for humans and CI logs."""
+    """Keep test outcomes for the final console summary."""
 
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
-        self.report = []
+        self.outcomes: list[tuple[str, str, str]] = []
 
     @staticmethod
-    def _test_name(test: unittest.TestCase) -> str:
+    def _name(test: unittest.case.TestCase) -> str:
         return test.id().rsplit(".", 1)[-1]
 
-    @staticmethod
-    def _message(error) -> str:
-        message = str(error[1]).strip().splitlines()
-        return message[0] if message else "no details"
-
-    def addSuccess(self, test) -> None:
+    def addSuccess(self, test: unittest.case.TestCase) -> None:
         super().addSuccess(test)
-        self.report.append((self._test_name(test), "OK", "completed"))
+        self.outcomes.append((self._name(test), "PASS", ""))
 
-    def addFailure(self, test, error) -> None:
-        super().addFailure(test, error)
-        self.report.append((self._test_name(test), "FAILED", self._message(error)))
+    def addFailure(self, test: unittest.case.TestCase, err) -> None:
+        super().addFailure(test, err)
+        self.outcomes.append((self._name(test), "FAIL", self._exc_info_to_string(err, test)))
 
-    def addError(self, test, error) -> None:
-        super().addError(test, error)
-        self.report.append((self._test_name(test), "FAILED", self._message(error)))
+    def addError(self, test: unittest.case.TestCase, err) -> None:
+        super().addError(test, err)
+        self.outcomes.append((self._name(test), "ERROR", self._exc_info_to_string(err, test)))
 
-
-def print_report(result: SummaryTestResult) -> None:
-    """Print one summary line per test and the final suite result."""
-    print("\nTEST REPORT", flush=True)
-    for test_name, outcome, message in result.report:
-        print(f"{outcome:6} {test_name}: {message}", flush=True)
-    passed = result.testsRun - len(result.failures) - len(result.errors)
-    overall = "OK" if result.wasSuccessful() else "FAILED"
-    print(
-        f"RESULT: {overall} | tests={result.testsRun} | "
-        f"passed={passed} | failed={len(result.failures) + len(result.errors)}",
-        flush=True,
-    )
+    def addSkip(self, test: unittest.case.TestCase, reason: str) -> None:
+        super().addSkip(test, reason)
+        self.outcomes.append((self._name(test), "SKIP", reason))
 
 
 def main() -> int:
@@ -1057,20 +639,33 @@ def main() -> int:
     parser.add_argument(
         "--pin",
         default=os.getenv("ESP32_DEVICE_PIN", "482917"),
-        help="device PIN used by the register test",
+        help="device PIN used to create the valid registration proof",
     )
     parser.add_argument("--verbose", action="store_true", help="show individual test names")
-    parser.add_argument("--quiet", action="store_true", help="disable HTTP request/response logging")
     args = parser.parse_args()
 
-    DeviceHttpTest.client = DeviceHttpClient(args.url, args.timeout, not args.quiet, args.pin)
-    verbosity = 2 if args.verbose else 1
+    DeviceHttpTest.base_url = args.url
+    DeviceHttpTest.timeout_seconds = args.timeout
+    DeviceHttpTest.device_pin = args.pin
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(DeviceHttpTest)
-    runner = unittest.TextTestRunner(verbosity=verbosity, resultclass=SummaryTestResult)
+    runner = unittest.TextTestRunner(
+        verbosity=2 if args.verbose else 1,
+        resultclass=SummaryTestResult,
+    )
     result = runner.run(suite)
-    print_report(result)
+    print("\n===== TEST SUMMARY =====", flush=True)
+    for test_name, outcome, details in result.outcomes:
+        print(f"{outcome:5} {test_name}" + (f": {details}" if details else ""), flush=True)
+    passed = sum(outcome == "PASS" for _, outcome, _ in result.outcomes)
+    failed = sum(outcome in ("FAIL", "ERROR") for _, outcome, _ in result.outcomes)
+    skipped = sum(outcome == "SKIP" for _, outcome, _ in result.outcomes)
+    print(
+        f"RESULT: {'PASS' if result.wasSuccessful() else 'FAIL'} | "
+        f"tests={result.testsRun} | passed={passed} | failed={failed} | skipped={skipped}",
+        flush=True,
+    )
     return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(int(main()))
+    raise SystemExit(main())

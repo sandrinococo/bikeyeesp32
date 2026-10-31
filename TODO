@@ -1,0 +1,15 @@
+Ho trovato la causa del blocco: quando il callback restituisce RESPONSE_TRY_AGAIN, 
+ESPAsyncWebServer consuma il credito disponibile. 
+I successivi poll, senza dati da confermare, non lo ripristinano: lo stream può quindi fermarsi dopo un frame.
+
+Ho aggiornato il callback in StreamingService.cpp perché attenda il frame successivo, 
+con un limite complessivo di un secondo; se la camera non produce frame, 
+termina lo stream invece di lasciarlo sospeso. 
+Ho anche corretto il log del body binario di test_56 in test_device_httpr2.py, 
+usando una rappresentazione escaped sicura per la console Windows, e aggiornato DEVELOP.md.
+
+Verifiche: build PlatformIO riuscita, test locale del logging binario superato e git diff --check senza errori. 
+Non ho aumentato i timeout Python. Non ho modificato p.log; 
+resta da verificare il comportamento streaming sulla scheda.
+
+upload_speed = 921600
